@@ -1,0 +1,62 @@
+
+.campaigns-page {
+  display: flex;
+  flex-direction: column;
+}
+
+.page-actions {
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.primary-button {
+  background-color: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 10px 20px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.primary-button:hover {
+  background-color: #1d4ed8;
+}
+
+.campaigns-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.campaign-card {
+  background-color: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.campaign-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.campaign-status {
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.campaign-status.active {
+  background-color: #dcfce7;
+  color: #16a34a;
+}
+
+.campaign-status.paused {
+  background-color: #fef3c7;
+  color: #d97706;
+}
