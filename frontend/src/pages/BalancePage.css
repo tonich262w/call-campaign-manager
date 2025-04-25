@@ -1,0 +1,75 @@
+.balance-page-container {
+  padding: 1.5rem;
+}
+
+.page-title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+  color: #333;
+}
+
+.balance-amount {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #0d6efd;
+  margin: 0.5rem 0;
+}
+
+.rates-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #6c757d;
+  margin-bottom: 0.5rem;
+}
+
+.rates-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.rate-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.875rem;
+}
+
+.rate-label {
+  font-weight: 500;
+}
+
+.card-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+}
+
+.manual-instructions {
+  background-color: #f8f9fa;
+  padding: 1rem;
+  border-radius: 0.25rem;
+  margin-top: 1.5rem;
+}
+
+.manual-instructions h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+
+.manual-instructions p {
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+}
+
+@media (max-width: 767.98px) {
+  .balance-page-container {
+    padding: 1rem;
+  }
+  
+  .row > div {
+    margin-bottom: 1rem;
+  }
+}

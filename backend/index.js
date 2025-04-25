@@ -13,6 +13,11 @@ const app = express();
 
 // Middlewares
 app.use(cors());
+
+// Para la ruta del webhook de Stripe necesitamos el body raw
+app.use('/api/stripe/webhook', express.raw({type: 'application/json'}));
+
+// Para el resto de rutas usamos JSON
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -36,6 +41,7 @@ app.use('/api/balance', require('./routes/balanceRoutes'));
 app.use('/api/campaigns', require('./routes/campaignRoutes'));
 app.use('/api/leads', require('./routes/leadRoutes'));
 app.use('/api/reports', require('./routes/reportRoutes'));
+app.use('/api/stripe', require('./routes/stripeRoutes')); // Nuevas rutas para Stripe
 
 // Ruta de prueba
 app.get('/', (req, res) => {
@@ -44,9 +50,6 @@ app.get('/', (req, res) => {
 
 // Middleware para manejar rutas no encontradas
 app.use(notFound);
-
-//importar stripe
-app.use('/api/stripe', require('./routes/stripeRoutes'));
 
 // Middleware para manejar errores
 app.use(errorHandler);
