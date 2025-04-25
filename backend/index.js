@@ -45,6 +45,9 @@ app.get('/', (req, res) => {
 // Middleware para manejar rutas no encontradas
 app.use(notFound);
 
+//importar stripe
+app.use('/api/stripe', require('./routes/stripeRoutes'));
+
 // Middleware para manejar errores
 app.use(errorHandler);
 
@@ -53,5 +56,5 @@ const PORT = process.env.PORT || 5000;
 
 // Iniciar servidor
 app.listen(PORT, () => {
-  console.log(Servidor corriendo en puerto ${PORT});
+  console.log(`Servidor corriendo en puerto ${PORT}`);
 });

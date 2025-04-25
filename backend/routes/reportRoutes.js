@@ -1,14 +1,11 @@
 // routes/reportRoutes.js
 const express = require('express');
 const router = express.Router();
-const {
-  // Funciones existentes
-  getStats,
-  getCallsByDay,
-  getRecentCalls,
+const { 
+  getStats, 
+  getCallsByDay, 
+  getRecentCalls, 
   getFinancialReport,
-  
-  // Nuevas funciones para informes más detallados
   getCampaignReport,
   getUserPerformanceReport,
   getSystemReport,
@@ -16,16 +13,21 @@ const {
 } = require('../controllers/reportController');
 const { protect, admin } = require('../middlewares/authMiddleware');
 
+// Ruta de prueba
+router.get('/test', (req, res) => {
+  res.json({ message: 'API de reportes funcionando correctamente' });
+});
+
 // Todas las rutas requieren autenticación
 router.use(protect);
 
-// Rutas existentes
+// Rutas generales
 router.get('/stats', getStats);
 router.get('/calls-by-day', getCallsByDay);
 router.get('/recent-calls', getRecentCalls);
 router.get('/financial', getFinancialReport);
 
-// Nuevas rutas para informes más detallados
+// Reportes de campaña y rendimiento
 router.get('/campaigns/:id', getCampaignReport);
 router.get('/performance', getUserPerformanceReport);
 

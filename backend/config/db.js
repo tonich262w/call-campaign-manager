@@ -1,16 +1,14 @@
-const mongoose = require ( 'mongoose');
-const connectB = async ( =>
-try i
-const conn = await
-mongoose.connect(process. env. MON-
-GODB_URI, {
-useNewUrlParser: true, useUnifiedTopology: true,
-3) ;
-console. 10g ( MongoDB
-Conectado: ${conn.connection.host}
-*);
-} catch (error) ‹
-console.error ( 'Error: $ {error.message}*);
-process. exit (1);
-}
-module. exports = connectB;
+const mongoose = require('mongoose');
+
+const connectDB = async () => {
+  try {
+    const conn = await mongoose.connect(process.env.MONGODB_URI);
+    
+    console.log(`MongoDB Atlas conectado: ${conn.connection.host}`);
+  } catch (error) {
+    console.error(`Error de conexión a MongoDB Atlas: ${error.message}`);
+    process.exit(1);
+  }
+};
+
+module.exports = connectDB;

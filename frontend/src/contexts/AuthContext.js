@@ -1,70 +1,90 @@
-import React, { createContext, useState, useEffect } from 'react';
+// src/contexts/AuthContext.js
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { authService } from '../services/api';
 
 // Crear el contexto
 export const AuthContext = createContext();
 
+// Hook personalizado para usar el contexto (evita importar useContext en cada componente)
+export const useAuth = () => {
+  return useContext(AuthContext);
+};
+
 // Proveedor del contexto
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Verificar si hay sesión guardada al cargar
+  // Cargar usuario al iniciar
   useEffect(() => {
-    const savedUser = localStorage.getItem('user');
-    
-    if (savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    
-    setLoading(false);
+    // Intenta cargar el usuario desde localStorage
+    const loadUser = () => {
+      try {
+        const user = authService.getCurrentUser();
+        setCurrentUser(user);
+      } catch (err) {
+        console.error("Error loading user:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadUser();
   }, []);
 
-  // Función simulada de inicio de sesión
-  const login = async (credentials) => {
-    setLoading(true);
+  // Función de login
+  const login = async (email, password) => {
+    setError(null);
     try {
-      // Simulación de llamada a API
-      console.log('Login con:', credentials);
-      
-      // Simular tiempo de procesamiento
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Usuario ficticio para pruebas
-      const userData = {
-        id: '123',
-        name: credentials.email.split('@')[0], // Usar parte del email como nombre
-        email: credentials.email,
-        role: 'user',
-        balance: 100
-      };
-      
-      setUser(userData);
-      // Guardar info en localStorage
-      localStorage.setItem('user', JSON.stringify(userData));
-      
-      return userData;
-    } finally {
-      setLoading(false);
+      const data = await authService.login(email, password);
+      setCurrentUser(data.user);
+      return data;
+    } catch (err) {
+      setError(err.response?.data?.message || 'Error en la autenticación');
+      throw err;
     }
   };
 
-  // Función para cerrar sesión
+  // Función de logout
   const logout = () => {
-    setUser(null);
-    localStorage.removeItem('user');
+    authService.logout();
+    setCurrentUser(null);
+  };
+
+  // Función de registro
+  const register = async (userData) => {
+    setError(null);
+    try {
+      const data = await authService.register(userData);
+      return data;
+    } catch (err) {
+      setError(err.response?.data?.message || 'Error en el registro');
+      throw err;
+    }
+  };
+
+  // Verificar si el usuario tiene rol de admin
+  const isAdmin = () => {
+    return currentUser?.role === 'admin';
+  };
+
+  // Valor proporcionado por el contexto
+  const value = {
+    currentUser,
+    login,
+    logout,
+    register,
+    isAdmin,
+    error,
+    setError
   };
 
   return (
-    <AuthContext.Provider value={{
-      user,
-      loading,
-      isAuthenticated: !!user,
-      login,
-      logout
-    }}>
-      {children}
+    <AuthContext.Provider value={value}>
+      {!loading && children}
     </AuthContext.Provider>
   );
 };
 
-
+export default AuthProvider;
