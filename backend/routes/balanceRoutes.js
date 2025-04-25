@@ -1,17 +1,29 @@
+// routes/balanceRoutes.js
 const express = require('express');
-const router = express.Router();
+const { protect, admin } = require('../middlewares/authMiddleware');
 const {
   getUserBalance,
-  addBalance,
-  getTransactions,
+  getTransactionHistory,
+  rechargeBalance,
+  checkSufficientBalance,
+  getAdminTransactions,
+  updatePricing,
+  addBalanceManually,
+  getFinancialSummary
 } = require('../controllers/balanceController');
-const { protect } = require('../middlewares/authMiddleware');
 
-// Todas las rutas requieren autenticación
-router.use(protect);
+const router = express.Router();
 
-router.get('/', getUserBalance);
-router.post('/add', addBalance);
-router.get('/transactions', getTransactions);
+// Rutas para usuarios normales
+router.get('/info', protect, getUserBalance);
+router.get('/transactions', protect, getTransactionHistory);
+router.post('/recharge', protect, rechargeBalance);
+router.post('/check-balance', protect, checkSufficientBalance);
+
+// Rutas solo para administradores
+router.get('/admin/transactions', protect, admin, getAdminTransactions);
+router.post('/admin/pricing', protect, admin, updatePricing);
+router.post('/admin/manual-recharge', protect, admin, addBalanceManually);
+router.get('/admin/summary', protect, admin, getFinancialSummary);
 
 module.exports = router;

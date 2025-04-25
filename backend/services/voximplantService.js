@@ -1,152 +1,190 @@
+// services/voximplantService.js
 const axios = require('axios');
-const crypto = require('crypto');
+const dotenv = require('dotenv');
+
+dotenv.config();
+
+const API_KEY = process.env.VOXIMPLANT_API_KEY;
+const ACCOUNT_ID = process.env.VOXIMPLANT_ACCOUNT_ID;
+const RULE_ID = process.env.VOXIMPLANT_RULE_ID;
+const BASE_URL = 'https://api.voximplant.com/platform_api';
 
 class VoximplantService {
   constructor() {
-    this.apiKey = process.env.VOXIMPLANT_API_KEY;
-    this.accountId = process.env.VOXIMPLANT_ACCOUNT_ID;
-    this.apiUrl = 'https://api.voximplant.com/platform_api';
-    this.token = null;
-    this.tokenExpire = null;
-  }
-
-  // Generar token de autenticación
-  async getToken() {
-    // Si ya tenemos un token válido, lo devolvemos
-    if (this.token && this.tokenExpire && this.tokenExpire > Date.now()) {
-      return this.token;
-    }
-
-    try {
-      const timestamp = Math.floor(Date.now() / 1000).toString();
-      const hash = crypto
-        .createHash('md5')
-        .update(this.accountId + timestamp + this.apiKey)
-        .digest('hex');
-
-      const response = await axios.get(${this.apiUrl}/GetAccountInfo, {
-        params: {
-          account_id: this.accountId,
-          api_key: this.apiKey,
-          timestamp,
-          hash,
-        },
-      });
-
-      if (response.data.error) {
-        throw new Error(Error de Voximplant: ${response.data.error.msg});
+    this.axiosInstance = axios.create({
+      baseURL: BASE_URL,
+      params: {
+        account_id: ACCOUNT_ID,
+        api_key: API_KEY
       }
+    });
+  }
 
-      this.token = response.data.token;
-      this.tokenExpire = Date.now() + 3600000; // 1 hora
-
-      return this.token;
+  // Autenticación con la API de Voximplant
+  async authenticate() {
+    try {
+      const response = await this.axiosInstance.get('/GetAccountInfo');
+      return response.data;
     } catch (error) {
-      console.error('Error al obtener token de Voximplant:', error);
-      throw new Error('No se pudo autenticar con el servicio de telefonía');
+      console.error('Error al autenticar con Voximplant:', error);
+      throw new Error('Error al conectar con el proveedor de llamadas');
     }
   }
 
-  // Crear una campaña
+  // Crear una campaña en Voximplant
   async createCampaign(campaignData) {
     try {
-      const token = await this.getToken();
-
-      // Transformar datos al formato requerido por Voximplant
-      const transformedData = {
+      // Adaptamos nuestros datos al formato esperado por Voximplant
+      const voximplantPayload = {
         campaign_name: campaignData.name,
-        rule_id: process.env.VOXIMPLANT_RULE_ID, // Debe estar configurado en .env
-        start_date: campaignData.schedule.startDate,
-        finish_date: campaignData.schedule.endDate || null,
-        from_time: campaignData.schedule.workingHours.start,
-        till_time: campaignData.schedule.workingHours.end,
-        max_attempts: campaignData.settings.maxAttempts,
-        retry_interval: campaignData.settings.retryInterval,
-        working_days: campaignData.schedule.workingDays.join(','),
+        rule_id: RULE_ID,
+        description: campaignData.description || '',
+        max_attempts: campaignData.maxAttempts || 3,
+        start_date: new Date(campaignData.startDate).toISOString(),
+        end_date: new Date(campaignData.endDate).toISOString()
+        // Otros parámetros específicos de Voximplant
       };
 
-      const response = await axios.get(${this.apiUrl}/AddCampaign, {
-        params: {
-          account_id: this.accountId,
-          api_key: this.apiKey,
-          campaign_name: transformedData.campaign_name,
-          rule_id: transformedData.rule_id,
-          start_date: transformedData.start_date,
-          finish_date: transformedData.finish_date,
-          from_time: transformedData.from_time,
-          till_time: transformedData.till_time,
-          max_attempts: transformedData.max_attempts,
-          retry_interval: transformedData.retry_interval,
-          working_days: transformedData.working_days,
-          token,
-        },
-      });
-
-      if (response.data.error) {
-        throw new Error(Error de Voximplant: ${response.data.error.msg});
-      }
-
+      const response = await this.axiosInstance.post('/CreateCampaign', voximplantPayload);
+      
+      // Devolvemos el ID de la campaña en Voximplant pero no exponemos otros detalles
       return {
-        success: true,
-        externalId: response.data.campaign_id.toString(),
-        campaignName: response.data.campaign_name,
+        externalId: response.data.campaign_id,
+        status: 'created'
       };
     } catch (error) {
       console.error('Error al crear campaña en Voximplant:', error);
-      throw new Error('No se pudo crear la campaña en el servicio de telefonía');
+      throw new Error('Error al crear la campaña en el sistema de llamadas');
     }
   }
 
   // Pausar una campaña
-  async pauseCampaign(externalId) {
+  async pauseCampaign(campaignExternalId) {
     try {
-      const token = await this.getToken();
-
-      const response = await axios.get(${this.apiUrl}/PauseCampaign, {
-        params: {
-          account_id: this.accountId,
-          api_key: this.apiKey,
-          campaign_id: externalId,
-          token,
-        },
+      const response = await this.axiosInstance.post('/StopCampaign', {
+        campaign_id: campaignExternalId
       });
-
-      if (response.data.error) {
-        throw new Error(Error de Voximplant: ${response.data.error.msg});
-      }
-
+      
       return {
-        success: true,
-        message: 'Campaña pausada exitosamente',
+        status: 'paused',
+        message: response.data.result || 'Campaña pausada exitosamente'
       };
     } catch (error) {
       console.error('Error al pausar campaña en Voximplant:', error);
-      throw new Error('No se pudo pausar la campaña');
+      throw new Error('Error al pausar la campaña');
     }
   }
 
-  // Obtener costo de una llamada
-  async getCallCost(duration, destination) {
-    // Este es un ejemplo simple. En la realidad, necesitarías consultar 
-    // las tarifas reales de Voximplant para el destino específico.
+  // Reanudar una campaña
+  async resumeCampaign(campaignExternalId) {
     try {
-      // Suponemos una tarifa base de $0.01 por minuto para simplificar
-      const baseCost = 0.01;
+      const response = await this.axiosInstance.post('/StartCampaign', {
+        campaign_id: campaignExternalId
+      });
       
-      // Convertir duración de segundos a minutos
-      const durationInMinutes = duration / 60;
-      
-      // Calcular el costo real
-      const cost = baseCost * durationInMinutes;
-      
-      return cost;
+      return {
+        status: 'active',
+        message: response.data.result || 'Campaña reanudada exitosamente'
+      };
     } catch (error) {
-      console.error('Error al calcular costo de llamada:', error);
-      return 0.01; // Costo mínimo por defecto
+      console.error('Error al reanudar campaña en Voximplant:', error);
+      throw new Error('Error al reanudar la campaña');
     }
   }
 
-  // Añade aquí más métodos según sea necesario...
+  // Eliminar una campaña
+  async deleteCampaign(campaignExternalId) {
+    try {
+      const response = await this.axiosInstance.post('/DeleteCampaign', {
+        campaign_id: campaignExternalId
+      });
+      
+      return {
+        status: 'deleted',
+        message: response.data.result || 'Campaña eliminada exitosamente'
+      };
+    } catch (error) {
+      console.error('Error al eliminar campaña en Voximplant:', error);
+      throw new Error('Error al eliminar la campaña');
+    }
+  }
+
+  // Añadir leads a una campaña
+  async addLeadsToCampaign(campaignExternalId, leads) {
+    try {
+      // Transformar los leads al formato esperado por Voximplant
+      const formattedLeads = leads.map(lead => ({
+        phone: lead.phone,
+        name: lead.name,
+        custom_data: JSON.stringify({
+          email: lead.email,
+          company: lead.company,
+          // Otros datos personalizados
+        })
+      }));
+
+      const response = await this.axiosInstance.post('/AddLeadsToCampaign', {
+        campaign_id: campaignExternalId,
+        leads: formattedLeads
+      });
+
+      return {
+        status: 'success',
+        imported: response.data.result_count || formattedLeads.length,
+        message: 'Leads importados exitosamente'
+      };
+    } catch (error) {
+      console.error('Error al añadir leads en Voximplant:', error);
+      throw new Error('Error al importar los contactos');
+    }
+  }
+
+  // Obtener estadísticas de una campaña
+  async getCampaignStats(campaignExternalId) {
+    try {
+      const response = await this.axiosInstance.get('/GetCampaignInfo', {
+        params: {
+          campaign_id: campaignExternalId
+        }
+      });
+      
+      // Transformamos y ocultamos los datos de Voximplant
+      // Solo devolvemos lo que necesitamos mostrar al cliente
+      return {
+        totalCalls: response.data.total_calls || 0,
+        completedCalls: response.data.completed_calls || 0,
+        successfulCalls: response.data.successful_calls || 0,
+        callMinutes: response.data.call_minutes || 0,
+        // Otros datos relevantes para el cliente
+      };
+    } catch (error) {
+      console.error('Error al obtener estadísticas de Voximplant:', error);
+      throw new Error('Error al obtener las estadísticas de la campaña');
+    }
+  }
+
+  // Calcular el costo real de las llamadas (para el sistema interno)
+  async calculateRealCost(campaignExternalId) {
+    try {
+      const stats = await this.getCampaignStats(campaignExternalId);
+      
+      // Costo real por llamada desde Voximplant (se mantiene oculto del cliente)
+      const realCostPerCall = 0.05; // Este es el costo real que te cobra Voximplant
+      const realCostPerMinute = 0.01; // Costo real por minuto adicional
+      
+      const callCost = stats.completedCalls * realCostPerCall;
+      const minuteCost = stats.callMinutes * realCostPerMinute;
+      
+      return {
+        callCost,
+        minuteCost,
+        totalRealCost: callCost + minuteCost
+      };
+    } catch (error) {
+      console.error('Error al calcular costo real:', error);
+      throw new Error('Error al calcular el costo de la campaña');
+    }
+  }
 }
 
 module.exports = new VoximplantService();

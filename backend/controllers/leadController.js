@@ -1,260 +1,344 @@
-const express = require('express');
-const router = express.Router();
-const {
+// controllers/leadController.js
+const Lead = require('../models/leadModel');
+const Campaign = require('../models/campaignModel');
+const multer = require('multer');
+const csv = require('csv-parser');
+const fs = require('fs');
+const path = require('path');
+
+// Crear un nuevo lead
+const createLead = async (req, res) => {
+  try {
+    const { name, email, phone, company, campaignId, status } = req.body;
+    
+    // Verificar que la campaña existe y pertenece al usuario
+    const campaign = await Campaign.findOne({
+      _id: campaignId,
+      userId: req.user._id
+    });
+    
+    if (!campaign) {
+      return res.status(404).json({ message: 'Campaña no encontrada' });
+    }
+    
+    const lead = await Lead.create({
+      campaignId,
+      userId: req.user._id,
+      name,
+      email,
+      phone,
+      company,
+      status: status || 'new'
+    });
+    
+    // Actualizar contador de leads en la campaña
+    campaign.totalLeads += 1;
+    await campaign.save();
+    
+    res.status(201).json({
+      message: 'Lead creado exitosamente',
+      lead
+    });
+  } catch (error) {
+    console.error('Error al crear lead:', error);
+    res.status(500).json({ message: 'Error al crear lead' });
+  }
+};
+
+// Importar leads desde CSV
+const importLeads = async (req, res) => {
+  // Configuración de multer para subida de archivos
+  const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, 'uploads/');
+    },
+    filename: (req, file, cb) => {
+      cb(null, Date.now() + path.extname(file.originalname));
+    }
+  });
+  
+  const upload = multer({
+    storage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
+    fileFilter: (req, file, cb) => {
+      if (file.mimetype === 'text/csv' || file.originalname.endsWith('.csv')) {
+        cb(null, true);
+      } else {
+        cb(new Error('Sólo se permiten archivos CSV'));
+      }
+    }
+  }).single('file');
+  
+  upload(req, res, async function(err) {
+    if (err) {
+      return res.status(400).json({ message: err.message });
+    }
+    
+    if (!req.file) {
+      return res.status(400).json({ message: 'No se ha subido ningún archivo' });
+    }
+    
+    try {
+      const { campaignId } = req.params;
+      
+      // Verificar que la campaña existe y pertenece al usuario
+      const campaign = await Campaign.findOne({
+        _id: campaignId,
+        userId: req.user._id
+      });
+      
+      if (!campaign) {
+        // Eliminar archivo
+        fs.unlinkSync(req.file.path);
+        return res.status(404).json({ message: 'Campaña no encontrada' });
+      }
+      
+      // Leer y procesar el CSV
+      const leads = [];
+      fs.createReadStream(req.file.path)
+        .pipe(csv())
+        .on('data', (data) => {
+          // Validación básica
+          if (data.phone) {
+            leads.push({
+              campaignId,
+              userId: req.user._id,
+              name: data.name || '',
+              email: data.email || '',
+              phone: data.phone,
+              company: data.company || '',
+              status: 'new'
+            });
+          }
+        })
+        .on('end', async () => {
+          // Eliminar archivo temporal
+          fs.unlinkSync(req.file.path);
+          
+          if (leads.length === 0) {
+            return res.status(400).json({ 
+              message: 'No se encontraron leads válidos en el archivo' 
+            });
+          }
+          
+          // Guardar leads en la base de datos
+          const savedLeads = await Lead.insertMany(leads);
+          
+          // Actualizar total de leads en la campaña
+          campaign.totalLeads += savedLeads.length;
+          await campaign.save();
+          
+          res.status(200).json({
+            message: 'Leads importados exitosamente',
+            count: savedLeads.length
+          });
+        });
+    } catch (error) {
+      console.error('Error al importar leads:', error);
+      // Si hay archivo, eliminarlo en caso de error
+      if (req.file && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      res.status(500).json({ message: 'Error al procesar la importación de leads' });
+    }
+  });
+};
+
+// Obtener leads por campaña
+const getLeadsByCampaign = async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    
+    // Verificar que la campaña existe y pertenece al usuario
+    const campaign = await Campaign.findOne({
+      _id: campaignId,
+      userId: req.user._id
+    });
+    
+    if (!campaign) {
+      return res.status(404).json({ message: 'Campaña no encontrada' });
+    }
+    
+    // Paginación
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const startIndex = (page - 1) * limit;
+    
+    // Filtros
+    const filter = { campaignId };
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
+    if (req.query.search) {
+      filter.$or = [
+        { name: { $regex: req.query.search, $options: 'i' } },
+        { email: { $regex: req.query.search, $options: 'i' } },
+        { phone: { $regex: req.query.search, $options: 'i' } },
+        { company: { $regex: req.query.search, $options: 'i' } }
+      ];
+    }
+    
+    const leads = await Lead.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(startIndex)
+      .limit(limit);
+    
+    const total = await Lead.countDocuments(filter);
+    
+    res.status(200).json({
+      leads,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Error al obtener leads:', error);
+    res.status(500).json({ message: 'Error al obtener leads' });
+  }
+};
+
+// Obtener un lead por ID
+const getLeadById = async (req, res) => {
+  try {
+    const lead = await Lead.findOne({
+      _id: req.params.id,
+      userId: req.user._id
+    });
+    
+    if (!lead) {
+      return res.status(404).json({ message: 'Lead no encontrado' });
+    }
+    
+    res.status(200).json(lead);
+  } catch (error) {
+    console.error('Error al obtener lead:', error);
+    res.status(500).json({ message: 'Error al obtener lead' });
+  }
+};
+
+// Actualizar un lead
+const updateLead = async (req, res) => {
+  try {
+    const { name, email, phone, company, status, notes } = req.body;
+    
+    const lead = await Lead.findOne({
+      _id: req.params.id,
+      userId: req.user._id
+    });
+    
+    if (!lead) {
+      return res.status(404).json({ message: 'Lead no encontrado' });
+    }
+    
+    // Actualizar campos
+    if (name) lead.name = name;
+    if (email) lead.email = email;
+    if (phone) lead.phone = phone;
+    if (company) lead.company = company;
+    if (status) lead.status = status;
+    if (notes) lead.notes = notes;
+    
+    await lead.save();
+    
+    res.status(200).json({
+      message: 'Lead actualizado exitosamente',
+      lead
+    });
+  } catch (error) {
+    console.error('Error al actualizar lead:', error);
+    res.status(500).json({ message: 'Error al actualizar lead' });
+  }
+};
+
+// Eliminar un lead
+const deleteLead = async (req, res) => {
+  try {
+    const lead = await Lead.findOne({
+      _id: req.params.id,
+      userId: req.user._id
+    });
+    
+    if (!lead) {
+      return res.status(404).json({ message: 'Lead no encontrado' });
+    }
+    
+    await Lead.deleteOne({_id: lead._id});
+    
+    // Actualizar contador de leads en la campaña
+    const campaign = await Campaign.findById(lead.campaignId);
+    if (campaign) {
+      campaign.totalLeads = Math.max(0, campaign.totalLeads - 1);
+      await campaign.save();
+    }
+    
+    res.status(200).json({
+      message: 'Lead eliminado exitosamente'
+    });
+  } catch (error) {
+    console.error('Error al eliminar lead:', error);
+    res.status(500).json({ message: 'Error al eliminar lead' });
+  }
+};
+
+// Actualizar estado de un lead (para integración con Voximplant)
+const updateLeadStatus = async (req, res) => {
+  try {
+    const { leadId } = req.params;
+    const { status } = req.body;
+    
+    const validStatuses = ['new', 'contacted', 'qualified', 'unqualified', 'converted'];
+    
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ message: 'Estado no válido' });
+    }
+    
+    const lead = await Lead.findOne({
+      _id: leadId,
+      userId: req.user._id
+    });
+    
+    if (!lead) {
+      return res.status(404).json({ message: 'Lead no encontrado' });
+    }
+    
+    lead.status = status;
+    
+    // Si el estado es 'contacted' o superior, registrar la llamada
+    if (status !== 'new') {
+      lead.lastCallDate = new Date();
+      lead.callAttempts += 1;
+    }
+    
+    await lead.save();
+    
+    // Si el estado es 'converted', actualizar estadísticas de la campaña
+    if (status === 'converted') {
+      const campaign = await Campaign.findById(lead.campaignId);
+      if (campaign) {
+        campaign.successfulCalls += 1;
+        await campaign.save();
+      }
+    }
+    
+    res.status(200).json({
+      message: 'Estado de lead actualizado exitosamente',
+      lead
+    });
+  } catch (error) {
+    console.error('Error al actualizar estado del lead:', error);
+    res.status(500).json({ message: 'Error al actualizar estado del lead' });
+  }
+};
+
+module.exports = {
   createLead,
   importLeads,
   getLeadsByCampaign,
   getLeadById,
   updateLead,
   deleteLead,
-} = require('../controllers/leadController');
-const { protect } = require('../middlewares/authMiddleware');
-
-// Todas las rutas requieren autenticación
-router.use(protect);
-
-router.route('/')
-  .post(createLead);
-
-router.route('/:id')
-  .get(getLeadById)
-  .put(updateLead)
-  .delete(deleteLead);
-
-router.post('/import/:campaignId', importLeads);
-router.get('/campaign/:campaignId', getLeadsByCampaign);
-
-module.exports = router;
-
-
-## Paso 21: Crear controlador de reportes
-
-1. Navega a la carpeta `controllers`:
-   
-   cd ../controllers
-   
-
-2. Crea un archivo llamado `reportController.js`:
-
-javascript
-const asyncHandler = require('express-async-handler');
-const Campaign = require('../models/campaignModel');
-const Lead = require('../models/leadModel');
-const User = require('../models/userModel');
-const Transaction = require('../models/transactionModel');
-
-// @desc    Obtener estadísticas generales del usuario
-// @route   GET /api/reports/stats
-// @access  Private
-const getStats = asyncHandler(async (req, res) => {
-  // Contar campañas
-  const totalCampaigns = await Campaign.countDocuments({ user: req.user._id });
-  const activeCampaigns = await Campaign.countDocuments({
-    user: req.user._id,
-    status: 'active',
-  });
-
-  // Contar leads
-  const totalLeads = await Lead.countDocuments({ user: req.user._id });
-  const processedLeads = await Lead.countDocuments({
-    user: req.user._id,
-    status: { $ne: 'pending' },
-  });
-
-  // Calcular tasa de éxito
-  const successfulCalls = await Lead.countDocuments({
-    user: req.user._id,
-    status: 'called',
-  });
-
-  const successRate = totalLeads > 0 ? Math.round((successfulCalls / totalLeads) * 100) : 0;
-
-  res.json({
-    totalCampaigns,
-    activeCampaigns,
-    totalLeads,
-    processedLeads,
-    successfulCalls,
-    successRate,
-  });
-});
-
-// @desc    Obtener llamadas por día (últimos 7 días)
-// @route   GET /api/reports/calls-by-day
-// @access  Private
-const getCallsByDay = asyncHandler(async (req, res) => {
-  const days = parseInt(req.query.days) || 7;
-  
-  // Fecha hace N días
-  const startDate = new Date();
-  startDate.setDate(startDate.getDate() - days);
-  startDate.setHours(0, 0, 0, 0);
-
-  // Agrupar llamadas por día
-  const callsByDay = await Lead.aggregate([
-    {
-      $match: {
-        user: req.user._id,
-        lastCallAt: { $gte: startDate },
-      },
-    },
-    {
-      $group: {
-        _id: {
-          year: { $year: '$lastCallAt' },
-          month: { $month: '$lastCallAt' },
-          day: { $dayOfMonth: '$lastCallAt' },
-        },
-        calls: { $sum: 1 },
-        successful: {
-          $sum: {
-            $cond: [{ $eq: ['$status', 'called'] }, 1, 0],
-          },
-        },
-      },
-    },
-    {
-      $project: {
-        _id: 0,
-        date: {
-          $dateToString: {
-            format: '%Y-%m-%d',
-            date: {
-              $dateFromParts: {
-                year: '$_id.year',
-                month: '$_id.month',
-                day: '$_id.day',
-              },
-            },
-          },
-        },
-        calls: 1,
-        successful: 1,
-      },
-    },
-    {
-      $sort: { date: 1 },
-    },
-  ]);
-
-  // Completar días sin datos
-  const result = [];
-  const dateMap = {};
-  
-  // Crear mapa con los datos existentes
-  callsByDay.forEach((dayData) => {
-    dateMap[dayData.date] = dayData;
-  });
-  
-  // Llenar datos para todos los días en el rango
-  for (let i = 0; i < days; i++) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    date.setHours(0, 0, 0, 0);
-    
-    const dateStr = date.toISOString().split('T')[0];
-    
-    if (dateMap[dateStr]) {
-      result.push(dateMap[dateStr]);
-    } else {
-      result.push({
-        date: dateStr,
-        calls: 0,
-        successful: 0,
-      });
-    }
-  }
-  
-  // Ordenar por fecha ascendente
-  result.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-  res.json(result);
-});
-
-// @desc    Obtener llamadas recientes
-// @route   GET /api/reports/recent-calls
-// @access  Private
-const getRecentCalls = asyncHandler(async (req, res) => {
-  const limit = parseInt(req.query.limit) || 5;
-
-  const recentCalls = await Lead.find({
-    user: req.user._id,
-    lastCallAt: { $exists: true },
-  })
-    .sort({ lastCallAt: -1 })
-    .limit(limit)
-    .select('name phone status lastCallAt attempts')
-    .lean();
-
-  // Formatear datos para frontend
-  const formattedCalls = recentCalls.map((call) => ({
-    id: call._id,
-    name: call.name,
-    phone: call.phone,
-    status: call.status,
-    time: call.lastCallAt ? new Date(call.lastCallAt).toLocaleTimeString() : 'N/A',
-    attempts: call.attempts,
-    duration: Math.floor(Math.random() * 300), // Simulado para demo
-  }));
-
-  res.json(formattedCalls);
-});
-
-// @desc    Obtener balance y transacciones recientes
-// @route   GET /api/reports/financial
-// @access  Private
-const getFinancialReport = asyncHandler(async (req, res) => {
-  // Obtener usuario con balance
-  const user = await User.findById(req.user._id).select('balance');
-
-  // Obtener transacciones recientes
-  const recentTransactions = await Transaction.find({ user: req.user._id })
-    .sort({ createdAt: -1 })
-    .limit(5);
-
-  // Calcular gastos totales
-  const totalCharges = await Transaction.aggregate([
-    {
-      $match: {
-        user: req.user._id,
-        type: 'charge',
-      },
-    },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: '$amount' },
-      },
-    },
-  ]);
-
-  // Calcular recargas totales
-  const totalDeposits = await Transaction.aggregate([
-    {
-      $match: {
-        user: req.user._id,
-        type: 'deposit',
-      },
-    },
-    {
-      $group: {
-        _id: null,
-        total: { $sum: '$amount' },
-      },
-    },
-  ]);
-
-  res.json({
-    currentBalance: user.balance,
-    recentTransactions,
-    totalSpent: totalCharges.length > 0 ? Math.abs(totalCharges[0].total) : 0,
-    totalDeposited: totalDeposits.length > 0 ? totalDeposits[0].total : 0,
-  });
-});
-
-module.exports = {
-  getStats,
-  getCallsByDay,
-  getRecentCalls,
-  getFinancialReport,
+  updateLeadStatus
 };

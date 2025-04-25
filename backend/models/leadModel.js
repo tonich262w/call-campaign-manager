@@ -1,57 +1,61 @@
+// models/leadModel.js
 const mongoose = require('mongoose');
 
-const leadSchema = mongoose.Schema(
-  {
-    campaign: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Campaign',
-      required: true,
-    },
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-    },
-    name: {
-      type: String,
-      required: true,
-    },
-    phone: {
-      type: String,
-      required: true,
-    },
-    email: {
-      type: String,
-      default: '',
-    },
-    status: {
-      type: String,
-      enum: ['pending', 'called', 'not_answered', 'busy', 'failed', 'do_not_call'],
-      default: 'pending',
-    },
-    attempts: {
-      type: Number,
-      default: 0,
-    },
-    lastCallAt: {
-      type: Date,
-    },
-    nextCallAt: {
-      type: Date,
-    },
-    notes: {
-      type: String,
-      default: '',
-    },
-    customFields: {
-      type: Object,
-      default: {},
-    },
+const leadSchema = new mongoose.Schema({
+  campaignId: {
+    type: mongoose.Schema.Types.ObjectId,
+    required: true,
+    ref: 'Campaign'
   },
-  {
-    timestamps: true,
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    required: true,
+    ref: 'User'
+  },
+  name: {
+    type: String,
+    required: true
+  },
+  email: {
+    type: String,
+    default: ''
+  },
+  phone: {
+    type: String,
+    required: true
+  },
+  company: {
+    type: String,
+    default: ''
+  },
+  status: {
+    type: String,
+    enum: ['new', 'contacted', 'qualified', 'unqualified', 'converted'],
+    default: 'new'
+  },
+  lastCallDate: {
+    type: Date,
+    default: null
+  },
+  callAttempts: {
+    type: Number,
+    default: 0
+  },
+  callDuration: {
+    type: Number,
+    default: 0 // en segundos
+  },
+  notes: {
+    type: String,
+    default: ''
+  },
+  customFields: {
+    type: Object,
+    default: {}
   }
-);
+}, {
+  timestamps: true
+});
 
 const Lead = mongoose.model('Lead', leadSchema);
 

@@ -1,4 +1,4 @@
-javascript
+// controllers/authController.js
 const asyncHandler = require('express-async-handler');
 const generateToken = require('../utils/generateToken');
 const User = require('../models/userModel');
@@ -18,6 +18,7 @@ const loginUser = asyncHandler(async (req, res) => {
       email: user.email,
       role: user.role,
       balance: user.balance,
+      isAdmin: user.isAdmin,
       token: generateToken(user._id),
     });
   } else {
@@ -53,6 +54,7 @@ const registerUser = asyncHandler(async (req, res) => {
       name: user.name,
       email: user.email,
       role: user.role,
+      isAdmin: user.isAdmin,
       balance: user.balance,
       token: generateToken(user._id),
     });
@@ -74,6 +76,7 @@ const getUserProfile = asyncHandler(async (req, res) => {
       name: user.name,
       email: user.email,
       role: user.role,
+      isAdmin: user.isAdmin,
       balance: user.balance,
       company: user.company,
       phone: user.phone,
@@ -84,8 +87,45 @@ const getUserProfile = asyncHandler(async (req, res) => {
   }
 });
 
+// @desc    Verificar si el token es válido
+// @route   GET /api/auth/verify
+// @access  Public
+const verifyToken = asyncHandler(async (req, res) => {
+  try {
+    // El middleware "protect" ya verifica y decodifica el token
+    // Si llegamos aquí, el token es válido
+    
+    // Obtener el usuario sin la contraseña
+    const user = await User.findById(req.user._id).select('-password');
+    
+    if (user) {
+      res.json({
+        success: true,
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          isAdmin: user.isAdmin
+        }
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        message: 'Usuario no encontrado'
+      });
+    }
+  } catch (error) {
+    res.status(401).json({
+      success: false,
+      message: 'Token inválido'
+    });
+  }
+});
+
 module.exports = {
   loginUser,
   registerUser,
   getUserProfile,
+  verifyToken
 };

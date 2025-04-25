@@ -1,0 +1,354 @@
+// frontend/src/services/api.js
+import axios from 'axios';
+
+// Crear instancia de axios con URL base
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+
+const axiosInstance = axios.create({
+  baseURL: API_URL,
+  headers: {
+    'Content-Type': 'application/json'
+  }
+});
+
+// Interceptor para añadir token de autenticación
+axiosInstance.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Interceptor para manejar respuestas y errores comunes
+axiosInstance.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  (error) => {
+    // Manejar errores comunes
+    if (error.response && error.response.status === 401) {
+      // Redirigir a login si hay error de autenticación
+      localStorage.removeItem('token');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+export default axiosInstance;
+
+// frontend/src/services/authService.js
+import api from './api';
+
+// Iniciar sesión
+export const login = async (email, password) => {
+  try {
+    const response = await api.post('/auth/login', { email, password });
+    const { token, user } = response.data;
+    
+    // Guardar token en localStorage
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(user));
+    
+    return { success: true, user };
+  } catch (error) {
+    console.error('Error en login:', error);
+    const message = error.response?.data?.message || 'Error al iniciar sesión';
+    return { success: false, message };
+  }
+};
+
+// Registrar usuario
+export const register = async (userData) => {
+  try {
+    const response = await api.post('/auth/register', userData);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('Error en registro:', error);
+    const message = error.response?.data?.message || 'Error al registrar usuario';
+    return { success: false, message };
+  }
+};
+
+// Cerrar sesión
+export const logout = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  // No es necesario hacer petición al servidor ya que usamos JWT
+};
+
+// Obtener usuario actual desde localStorage
+export const getCurrentUser = () => {
+  const user = localStorage.getItem('user');
+  return user ? JSON.parse(user) : null;
+};
+
+// Verificar si el token es válido
+export const verifyToken = async () => {
+  try {
+    const response = await api.get('/auth/verify');
+    return { success: true, user: response.data.user };
+  } catch (error) {
+    // Si hay error, lo más probable es que el token sea inválido
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    return { success: false };
+  }
+};
+
+// frontend/src/services/campaignService.js
+import api from './api';
+
+// Obtener todas las campañas
+export const getCampaigns = async () => {
+  try {
+    const response = await api.get('/campaigns');
+    return { success: true, campaigns: response.data };
+  } catch (error) {
+    console.error('Error al obtener campañas:', error);
+    const message = error.response?.data?.message || 'Error al obtener campañas';
+    return { success: false, message };
+  }
+};
+
+// Obtener una campaña específica
+export const getCampaignById = async (id) => {
+  try {
+    const response = await api.get(`/campaigns/${id}`);
+    return { success: true, campaign: response.data.campaign, leads: response.data.leads };
+  } catch (error) {
+    console.error('Error al obtener campaña:', error);
+    const message = error.response?.data?.message || 'Error al obtener detalles de la campaña';
+    return { success: false, message };
+  }
+};
+
+// Crear nueva campaña
+export const createCampaign = async (campaignData) => {
+  try {
+    const response = await api.post('/campaigns', campaignData);
+    return { 
+      success: true, 
+      message: response.data.message,
+      campaignId: response.data.campaignId 
+    };
+  } catch (error) {
+    console.error('Error al crear campaña:', error);
+    const message = error.response?.data?.message || 'Error al crear la campaña';
+    return { success: false, message };
+  }
+};
+
+// Pausar campaña
+export const pauseCampaign = async (id) => {
+  try {
+    const response = await api.put(`/campaigns/${id}/pause`);
+    return { success: true, message: response.data.message };
+  } catch (error) {
+    console.error('Error al pausar campaña:', error);
+    const message = error.response?.data?.message || 'Error al pausar la campaña';
+    return { success: false, message };
+  }
+};
+
+// Reanudar campaña
+export const resumeCampaign = async (id) => {
+  try {
+    const response = await api.put(`/campaigns/${id}/resume`);
+    return { success: true, message: response.data.message };
+  } catch (error) {
+    console.error('Error al reanudar campaña:', error);
+    const message = error.response?.data?.message || 'Error al reanudar la campaña';
+    return { success: false, message };
+  }
+};
+
+// Eliminar campaña
+export const deleteCampaign = async (id) => {
+  try {
+    const response = await api.delete(`/campaigns/${id}`);
+    return { success: true, message: response.data.message };
+  } catch (error) {
+    console.error('Error al eliminar campaña:', error);
+    const message = error.response?.data?.message || 'Error al eliminar la campaña';
+    return { success: false, message };
+  }
+};
+
+// Importar leads a una campaña
+export const importLeads = async (campaignId, file) => {
+  try {
+    // Crear un FormData para enviar el archivo
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    const response = await api.post(
+      `/campaigns/${campaignId}/import-leads`, 
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      }
+    );
+    
+    return { 
+      success: true, 
+      message: response.data.message,
+      count: response.data.count 
+    };
+  } catch (error) {
+    console.error('Error al importar leads:', error);
+    const message = error.response?.data?.message || 'Error al importar contactos';
+    return { success: false, message };
+  }
+};
+
+// frontend/src/services/leadService.js
+import api from './api';
+
+// Actualizar estado de un lead
+export const updateLeadStatus = async (leadId, status) => {
+  try {
+    const response = await api.put(`/leads/${leadId}/status`, { status });
+    return { success: true, lead: response.data.lead };
+  } catch (error) {
+    console.error('Error al actualizar estado:', error);
+    const message = error.response?.data?.message || 'Error al actualizar el estado del lead';
+    return { success: false, message };
+  }
+};
+
+// frontend/src/services/balanceService.js
+import api from './api';
+
+// Obtener información del saldo
+export const getBalance = async () => {
+  try {
+    const response = await api.get('/balance/info');
+    return { success: true, balance: response.data };
+  } catch (error) {
+    console.error('Error al obtener saldo:', error);
+    const message = error.response?.data?.message || 'Error al obtener información del saldo';
+    return { success: false, message };
+  }
+};
+
+// Obtener historial de transacciones
+export const getTransactions = async () => {
+  try {
+    const response = await api.get('/balance/transactions');
+    return { success: true, transactions: response.data };
+  } catch (error) {
+    console.error('Error al obtener transacciones:', error);
+    const message = error.response?.data?.message || 'Error al obtener historial de transacciones';
+    return { success: false, message };
+  }
+};
+
+// Recargar saldo
+export const rechargeBalance = async (amount, paymentMethod, paymentDetails) => {
+  try {
+    const response = await api.post('/balance/recharge', {
+      amount,
+      paymentMethod,
+      paymentDetails
+    });
+    
+    return { 
+      success: true, 
+      message: response.data.message,
+      currentBalance: response.data.currentBalance
+    };
+  } catch (error) {
+    console.error('Error al recargar saldo:', error);
+    const message = error.response?.data?.message || 'Error al procesar la recarga de saldo';
+    return { success: false, message };
+  }
+};
+
+// Verificar si hay saldo suficiente para una campaña
+export const checkSufficientBalance = async (campaignId, estimatedCalls) => {
+  try {
+    const response = await api.post('/balance/check-balance', {
+      campaignId,
+      estimatedCalls
+    });
+    
+    return { 
+      success: true, 
+      sufficient: response.data.sufficient,
+      currentBalance: response.data.currentBalance,
+      estimatedCost: response.data.estimatedCost,
+      remaining: response.data.remaining
+    };
+  } catch (error) {
+    console.error('Error al verificar saldo:', error);
+    const message = error.response?.data?.message || 'Error al verificar disponibilidad de saldo';
+    return { success: false, message };
+  }
+};
+
+// frontend/src/services/reportService.js
+import api from './api';
+
+// Obtener reporte de una campaña
+export const getCampaignReport = async (campaignId, startDate, endDate) => {
+  try {
+    let url = `/reports/campaigns/${campaignId}`;
+    
+    // Añadir parámetros de fecha si existen
+    const params = new URLSearchParams();
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    
+    if (params.toString()) {
+      url += `?${params.toString()}`;
+    }
+    
+    const response = await api.get(url);
+    return { success: true, report: response.data };
+  } catch (error) {
+    console.error('Error al obtener reporte:', error);
+    const message = error.response?.data?.message || 'Error al generar el reporte';
+    return { success: false, message };
+  }
+};
+
+// Obtener reporte de rendimiento del usuario
+export const getUserPerformanceReport = async (period = 'month') => {
+  try {
+    const response = await api.get(`/reports/performance?period=${period}`);
+    return { success: true, report: response.data };
+  } catch (error) {
+    console.error('Error al obtener reporte de rendimiento:', error);
+    const message = error.response?.data?.message || 'Error al generar el reporte de rendimiento';
+    return { success: false, message };
+  }
+};
+
+// Servicios admin (solo para usuarios administradores)
+// frontend/src/services/adminService.js
+import api from './api';
+
+// Obtener todas las transacciones (admin)
+export const getAdminTransactions = async () => {
+  try {
+    const response = await api.get('/balance/admin/transactions');
+    return { success: true, transactions: response.data };
+  } catch (error) {
+    console.error('Error al obtener transacciones admin:', error);
+    const message = error.response?.data?.message || 'Error al obtener datos de transacciones';
+    return { success: false, message };
+  }
+};
+
+// Actualizar configuración de precios (admin)
+export const updatePricing = async (pricingData) => {
+  
