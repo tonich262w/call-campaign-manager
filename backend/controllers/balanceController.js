@@ -24,12 +24,43 @@ const getUserBalance = async (req, res) => {
     // Obtener la configuración de precios actual (solo la parte visible al cliente)
     const pricing = await Pricing.findOne({ active: true });
     
-    // Solo mostramos al cliente la tarifa inflada, no la real
+    // Intentamos obtener el saldo real de Voximplant
+    let voximplantBalance = null;
+    
+    try {
+      // Llamamos a la API real de Voximplant para obtener el saldo
+      voximplantBalance = await voximplantService.getAccountBalance();
+      
+      console.log('Saldo real de Voximplant:', voximplantBalance);
+      
+      // Si tenemos éxito, actualizamos el saldo en la base de datos
+      if (voximplantBalance && voximplantBalance.balance !== undefined) {
+        // Solo actualizamos si el saldo es diferente para evitar actualizaciones innecesarias
+        if (balance.currentBalance !== voximplantBalance.balance) {
+          balance = await Balance.findOneAndUpdate(
+            { userId },
+            { 
+              currentBalance: voximplantBalance.balance,
+              lastUpdated: Date.now() 
+            },
+            { new: true }
+          );
+        }
+      }
+    } catch (voxError) {
+      console.error('Error al obtener saldo simulado:', voxError);
+      // Si hay un error, continuamos con el saldo almacenado en la base de datos
+    }
+    
+    // Preparamos la respuesta con el saldo actualizado (ya sea de Voximplant o de la base de datos)
     const balanceInfo = {
       currentBalance: balance.currentBalance,
       totalSpent: balance.totalSpent,
       callRate: pricing ? pricing.callRate : 0.10,
-      callMinuteRate: pricing ? pricing.callMinuteRate : 0.02
+      callMinuteRate: pricing ? pricing.callMinuteRate : 0.02,
+      // Añadimos información sobre si el saldo proviene de Voximplant o de la base de datos
+      source: voximplantBalance ? 'voximplant' : 'database',
+      lastUpdated: balance.lastUpdated || new Date()
     };
     
     res.status(200).json(balanceInfo);

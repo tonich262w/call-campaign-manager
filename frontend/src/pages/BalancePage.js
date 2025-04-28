@@ -1,367 +1,488 @@
-import React, { useState, useEffect } from 'react';
-import { Elements } from '@stripe/react-stripe-js';
-import { loadStripe } from '@stripe/stripe-js';
-import StripeCheckout from '../components/StripeCheckout';
-import axios from 'axios';
-import './BalancePage.css';
+// src/pages/BalancePage.js
 
-// Carga Stripe con la clave pública
-const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
+import React, { useState, useEffect } from 'react';
+import { format } from 'date-fns';
+import { FaSync, FaHistory, FaCreditCard } from 'react-icons/fa';
+import { Tab, Tabs, TabList, TabPanel } from 'react-tabs';
+import 'react-tabs/style/react-tabs.css';
+import StripePayment from '../components/StripePayment';
+import { Balance } from '../services/apiService';
 
 const BalancePage = () => {
-  const [balance, setBalance] = useState({
-    currentBalance: 0,
-    totalSpent: 0,
-    callRate: 0.05,
-    callMinuteRate: 0.02
-  });
-  
-  const [transactions, setTransactions] = useState([]);
-  const [campaignCosts, setCampaignCosts] = useState([]);
-  const [activeTab, setActiveTab] = useState('manual');
-  const [rechargeAmount, setRechargeAmount] = useState('');
+  const [balanceData, setBalanceData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [rechargeLoading, setRechargeLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
-  
-  // Cargar datos de balance del usuario
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [transactionsData, setTransactionsData] = useState(null);
+  const [loadingTransactions, setLoadingTransactions] = useState(true);
+
+  // Cargar datos reales
   useEffect(() => {
-    const fetchBalance = async () => {
+    const loadData = async () => {
       try {
-        const res = await axios.get('/api/balance');
-        setBalance(res.data);
+        setLoading(true);
+        setLoadingTransactions(true);
+        setError(null);
+        
+        // Cargar datos de saldo y transacciones
+        const balanceInfo = await Balance.getInfo();
+        setBalanceData(balanceInfo || {
+          balance: 0,
+          callCost: 0.15,
+          costLastUpdated: new Date(),
+          totalSpent: 0,
+          totalCalls: 0
+        });
+        
+        const transactions = await Balance.getTransactions();
+        setTransactionsData(transactions || { transactions: [] });
+        
         setLoading(false);
+        setLoadingTransactions(false);
+        setLastUpdated(new Date());
       } catch (err) {
-        console.error('Error al cargar el balance:', err);
+        console.error('Error loading balance data:', err);
         setError('Error al cargar los datos de saldo');
         setLoading(false);
+        setLoadingTransactions(false);
+        
+        // Si hay un error, mostrar datos de ejemplo para desarrollo
+        const mockBalanceData = {
+          balance: 250.75,
+          callCost: 0.15,
+          costLastUpdated: new Date(2025, 3, 1),
+          totalSpent: 100,
+          totalCalls: 500
+        };
+
+        const mockTransactionsData = {
+          transactions: [
+            {
+              _id: '1',
+              date: new Date(2025, 3, 25),
+              type: 'deposit',
+              description: 'Recarga de saldo',
+              amount: 100,
+              balanceAfter: 250.75
+            },
+            {
+              _id: '2',
+              date: new Date(2025, 3, 20),
+              type: 'charge',
+              description: 'Campaña de Ventas Q2 - 50 llamadas',
+              amount: -7.50,
+              balanceAfter: 150.75
+            },
+            {
+              _id: '3',
+              date: new Date(2025, 3, 15),
+              type: 'deposit',
+              description: 'Recarga de saldo',
+              amount: 50,
+              balanceAfter: 158.25
+            },
+            {
+              _id: '4',
+              date: new Date(2025, 3, 10),
+              type: 'charge',
+              description: 'Seguimiento Clientes - 25 llamadas',
+              amount: -3.75,
+              balanceAfter: 108.25
+            },
+            {
+              _id: '5',
+              date: new Date(2025, 3, 5),
+              type: 'deposit',
+              description: 'Recarga inicial',
+              amount: 112,
+              balanceAfter: 112
+            }
+          ]
+        };
+
+        setBalanceData(mockBalanceData);
+        setTransactionsData(mockTransactionsData);
       }
     };
-    
-    const fetchTransactions = async () => {
-      try {
-        const res = await axios.get('/api/balance/transactions');
-        setTransactions(res.data);
-      } catch (err) {
-        console.error('Error al cargar transacciones:', err);
-      }
-    };
-    
-    const fetchCampaignCosts = async () => {
-      try {
-        const res = await axios.get('/api/balance/campaign-costs');
-        setCampaignCosts(res.data);
-      } catch (err) {
-        console.error('Error al cargar costos por campaña:', err);
-      }
-    };
-    
-    fetchBalance();
-    fetchTransactions();
-    fetchCampaignCosts();
+
+    loadData();
   }, []);
-  
-  // Manejar recarga manual
-  const handleManualRecharge = async (e) => {
-    e.preventDefault();
-    
-    if (!rechargeAmount || isNaN(rechargeAmount) || parseFloat(rechargeAmount) <= 0) {
-      setError('Por favor, ingrese un monto válido');
-      return;
-    }
-    
-    const amount = parseFloat(rechargeAmount);
-    
-    if (amount < 10) {
-      setError('El monto mínimo de recarga es $10.00');
-      return;
-    }
-    
-    setRechargeLoading(true);
-    setError(null);
-    setSuccess(null);
-    
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [tabIndex, setTabIndex] = useState(0);
+  const [rechargeAmount, setRechargeAmount] = useState(50);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
     try {
-      // Registrar solicitud de recarga manual
-      const res = await axios.post('/api/balance/request-manual-recharge', {
-        amount,
-        notes: 'Solicitud de recarga manual'
+      // Cargar datos de saldo y transacciones
+      const balanceInfo = await Balance.getInfo();
+      setBalanceData(balanceInfo || {
+        balance: 0,
+        callCost: 0.15,
+        costLastUpdated: new Date(),
+        totalSpent: 0,
+        totalCalls: 0
       });
       
-      setSuccess(res.data.message || 'Solicitud de recarga enviada con éxito');
-      setRechargeAmount('');
+      const transactions = await Balance.getTransactions();
+      setTransactionsData(transactions || { transactions: [] });
+      
+      setLastUpdated(new Date());
     } catch (err) {
-      console.error('Error al solicitar recarga:', err);
-      setError(err.response?.data?.message || 'Error al procesar la solicitud de recarga');
+      console.error('Error refreshing balance data:', err);
+      setError('Error al actualizar los datos de saldo');
     } finally {
-      setRechargeLoading(false);
+      setIsRefreshing(false);
     }
   };
-  
-  // Manejar recarga exitosa con Stripe
-  const handleStripeSuccess = async (amount) => {
-    try {
-      // Refrescar el balance
-      const res = await axios.get('/api/balance');
-      setBalance(res.data);
-      
-      // Refrescar transacciones
-      const transRes = await axios.get('/api/balance/transactions');
-      setTransactions(transRes.data);
-      
-      // Mostrar mensaje de éxito
-      setSuccess(`Recarga de $${amount.toFixed(2)} realizada con éxito`);
-    } catch (err) {
-      console.error('Error al actualizar datos después de la recarga:', err);
-    }
-  };
-  
-  if (loading) {
-    return (
-      <div className="d-flex justify-content-center align-items-center py-5">
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Cargando...</span>
+
+  return (
+    <div className="balance-container p-4">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Saldo y Pagos</h1>
+        <div className="flex items-center">
+          {lastUpdated && (
+            <span className="text-sm text-gray-500 mr-3">
+              Última actualización: {format(new Date(lastUpdated), 'HH:mm:ss')}
+            </span>
+          )}
+          <button 
+            onClick={handleManualRefresh}
+            disabled={loading || isRefreshing}
+            className={`flex items-center bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded 
+              ${(loading || isRefreshing) ? 'opacity-70 cursor-not-allowed' : ''}`}
+          >
+            <FaSync className={`mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+            Actualizar
+          </button>
         </div>
       </div>
-    );
-  }
-  
-  return (
-    <div className="balance-page-container">
-      <h1 className="page-title">Gestión de Saldo</h1>
-      
-      {/* Resumen del balance */}
-      <div className="row mb-4">
-        <div className="col-md-6">
-          <div className="card h-100">
-            <div className="card-body">
-              <h2 className="card-title">Saldo Disponible</h2>
-              <div className="balance-amount">${balance.currentBalance.toFixed(2)}</div>
-              <p className="text-muted">
-                Has gastado un total de ${balance.totalSpent.toFixed(2)} en llamadas
-              </p>
+
+      {loading && !balanceData && (
+        <div className="text-center py-6">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+          <p className="mt-2">Cargando información de saldo...</p>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6">
+          <p>{error}</p>
+          <button 
+            onClick={handleManualRefresh}
+            className="text-red-700 underline mt-2"
+          >
+            Intentar nuevamente
+          </button>
+        </div>
+      )}
+
+      {balanceData && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h3 className="text-lg text-gray-500 mb-2">Saldo actual</h3>
+            <div className="text-3xl font-bold">${(balanceData.balance || 0).toFixed(2)}</div>
+            {balanceData.source && (
+              <div className="mt-1">
+                <span className={`text-xs px-2 py-1 rounded ${balanceData.source === 'voximplant' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+                  {balanceData.source === 'voximplant' ? 'Saldo real de Voximplant' : 'Saldo de base de datos'}
+                </span>
+              </div>
+            )}
+            <div className="mt-4 text-sm">
+              <div className="flex justify-between text-gray-600">
+                <span>Llamadas disponibles (est.):</span>
+                <span>{Math.floor((balanceData.balance || 0) / (balanceData.callCost || 1))}</span>
+              </div>
             </div>
-            <div className="card-footer bg-light">
-              <h3 className="rates-title">Tarifas actuales</h3>
-              <div className="rates-info">
-                <div className="rate-item">
-                  <span className="rate-label">Llamada:</span>
-                  <span className="rate-value">${balance.callRate.toFixed(2)} por llamada</span>
-                </div>
-                <div className="rate-item">
-                  <span className="rate-label">Minuto adicional:</span>
-                  <span className="rate-value">${balance.callMinuteRate.toFixed(2)} por minuto</span>
-                </div>
+          </div>
+          
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h3 className="text-lg text-gray-500 mb-2">Costo por llamada</h3>
+            <div className="text-3xl font-bold">${(balanceData.callCost || 0).toFixed(2)}</div>
+            <div className="mt-4 text-sm">
+              <div className="flex justify-between text-gray-600">
+                <span>Última modificación:</span>
+                <span>{balanceData.costLastUpdated ? 
+                  format(new Date(balanceData.costLastUpdated), 'dd/MM/yyyy') : 'N/A'}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h3 className="text-lg text-gray-500 mb-2">Total gastado</h3>
+            <div className="text-3xl font-bold">${(balanceData.totalSpent || 0).toFixed(2)}</div>
+            <div className="mt-4 text-sm">
+              <div className="flex justify-between text-gray-600">
+                <span>Llamadas realizadas:</span>
+                <span>{balanceData.totalCalls || 0}</span>
               </div>
             </div>
           </div>
         </div>
-        
-        <div className="col-md-6">
-          <div className="card h-100">
-            <div className="card-body">
-              <h2 className="card-title">Recargar Saldo</h2>
+      )}
+
+      <div className="bg-white rounded-lg shadow p-6">
+        <Tabs selectedIndex={tabIndex} onSelect={index => setTabIndex(index)}>
+          <TabList className="flex border-b mb-6">
+            <Tab className="mr-4 py-2 px-4 cursor-pointer border-b-2 border-transparent hover:text-blue-500">
+              Recargar saldo
+            </Tab>
+            <Tab className="mr-4 py-2 px-4 cursor-pointer border-b-2 border-transparent hover:text-blue-500">
+              Historial de transacciones
+            </Tab>
+          </TabList>
+
+          <TabPanel>
+            <div className="mb-6">
+              <h3 className="text-xl font-semibold mb-4">Selecciona un método de pago</h3>
               
-              {/* Pestañas para métodos de pago */}
-              <ul className="nav nav-tabs mb-3">
-                <li className="nav-item">
-                  <a 
-                    className={`nav-link ${activeTab === 'manual' ? 'active' : ''}`}
-                    href="#!"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setActiveTab('manual');
-                      setError(null);
-                      setSuccess(null);
-                    }}
-                  >
-                    Transferencia Manual
-                  </a>
-                </li>
-                <li className="nav-item">
-                  <a 
-                    className={`nav-link ${activeTab === 'stripe' ? 'active' : ''}`}
-                    href="#!"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setActiveTab('stripe');
-                      setError(null);
-                      setSuccess(null);
-                    }}
-                  >
-                    Pago con Tarjeta
-                  </a>
-                </li>
-              </ul>
-              
-              {/* Alertas de error y éxito */}
-              {error && (
-                <div className="alert alert-danger" role="alert">
-                  {error}
-                </div>
-              )}
-              
-              {success && (
-                <div className="alert alert-success" role="alert">
-                  {success}
-                </div>
-              )}
-              
-              {/* Contenido de pestañas */}
-              <div className="tab-content">
-                {/* Pestaña de recarga manual */}
-                {activeTab === 'manual' && (
-                  <div>
-                    <form onSubmit={handleManualRecharge}>
-                      <div className="mb-3">
-                        <label htmlFor="manualAmount" className="form-label">Monto a recargar ($)</label>
+              <Tabs>
+                <TabList className="flex mb-4">
+                  <Tab className="mr-2 py-2 px-4 rounded-t-lg cursor-pointer bg-gray-100 hover:bg-gray-200">
+                    <div className="flex items-center">
+                      <FaCreditCard className="mr-2" />
+                      Tarjeta de crédito/débito
+                    </div>
+                  </Tab>
+                  <Tab className="py-2 px-4 rounded-t-lg cursor-pointer bg-gray-100 hover:bg-gray-200">
+                    <div className="flex items-center">
+                      <FaHistory className="mr-2" />
+                      Transferencia bancaria
+                    </div>
+                  </Tab>
+                </TabList>
+
+                <TabPanel>
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h4 className="font-medium mb-4">Recarga con tarjeta</h4>
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Monto a recargar
+                      </label>
+                      <div className="mt-1 relative rounded-md shadow-sm">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <span className="text-gray-500 sm:text-sm">$</span>
+                        </div>
                         <input
                           type="number"
-                          className="form-control"
-                          id="manualAmount"
                           min="10"
-                          step="1"
-                          placeholder="100"
+                          step="5"
+                          className="focus:ring-blue-500 focus:border-blue-500 block w-full pl-7 pr-12 sm:text-sm border-gray-300 rounded-md"
+                          placeholder="0.00"
                           value={rechargeAmount}
-                          onChange={(e) => setRechargeAmount(e.target.value)}
-                          required
+                          onChange={(e) => setRechargeAmount(Number(e.target.value))}
                         />
-                        <div className="form-text">Monto mínimo: $10.00</div>
+                        <div className="absolute inset-y-0 right-0 flex items-center">
+                          <label htmlFor="currency" className="sr-only">
+                            Moneda
+                          </label>
+                          <select
+                            id="currency"
+                            name="currency"
+                            className="focus:ring-blue-500 focus:border-blue-500 h-full py-0 pl-2 pr-7 border-transparent bg-transparent text-gray-500 sm:text-sm rounded-md"
+                          >
+                            <option>USD</option>
+                          </select>
+                        </div>
                       </div>
-                      
-                      <button 
-                        type="submit" 
-                        className="btn btn-primary"
-                        disabled={rechargeLoading}
-                      >
-                        {rechargeLoading ? 'Procesando...' : 'Solicitar Recarga'}
-                      </button>
-                    </form>
+                    </div>
                     
-                    <div className="manual-instructions mt-3">
-                      <h4>Instrucciones para transferencia:</h4>
-                      <p>
-                        1. Realice una transferencia bancaria a:<br />
-                        <strong>Banco:</strong> [NOMBRE DEL BANCO]<br />
-                        <strong>Cuenta:</strong> [NÚMERO DE CUENTA]<br />
-                        <strong>Titular:</strong> [NOMBRE DE LA EMPRESA]
-                      </p>
-                      <p>
-                        2. Envíe el comprobante de pago a <strong>pagos@ejemplo.com</strong> indicando
-                        su ID de usuario.
-                      </p>
-                      <p>
-                        3. Una vez verificado el pago, su saldo será actualizado en un plazo de 24 horas hábiles.
-                      </p>
+                    <StripePayment amount={rechargeAmount} />
+                  </div>
+                </TabPanel>
+
+                <TabPanel>
+                  <div className="bg-gray-50 p-6 rounded-lg">
+                    <h4 className="font-medium mb-4">Recarga por transferencia bancaria</h4>
+                    <p className="mb-4 text-gray-600">
+                      Realiza una transferencia a la siguiente cuenta bancaria y envía el comprobante.
+                    </p>
+                    
+                    <div className="bg-white p-4 rounded border border-gray-200 mb-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-sm text-gray-500">Banco</p>
+                          <p className="font-medium">Banco Nacional</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-500">Titular</p>
+                          <p className="font-medium">Call Campaign Manager S.A.</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-500">Cuenta</p>
+                          <p className="font-medium">1234-5678-90-1234567890</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-500">SWIFT/BIC</p>
+                          <p className="font-medium">BNCEXMPL123</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Monto transferido
+                      </label>
+                      <div className="mt-1 relative rounded-md shadow-sm">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <span className="text-gray-500 sm:text-sm">$</span>
+                        </div>
+                        <input
+                          type="number"
+                          className="focus:ring-blue-500 focus:border-blue-500 block w-full pl-7 pr-12 sm:text-sm border-gray-300 rounded-md"
+                          placeholder="0.00"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Fecha de transferencia
+                      </label>
+                      <input
+                        type="date"
+                        className="focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                      />
+                    </div>
+                    
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Referencia/Número de transferencia
+                      </label>
+                      <input
+                        type="text"
+                        className="focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md"
+                        placeholder="Ref. de transferencia o últimos 4 dígitos"
+                      />
+                    </div>
+                    
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Comprobante de pago (opcional)
+                      </label>
+                      <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
+                        <div className="space-y-1 text-center">
+                          <svg
+                            className="mx-auto h-12 w-12 text-gray-400"
+                            stroke="currentColor"
+                            fill="none"
+                            viewBox="0 0 48 48"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02"
+                              strokeWidth={2}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                          <div className="flex text-sm text-gray-600">
+                            <label
+                              htmlFor="file-upload"
+                              className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+                            >
+                              <span>Subir un archivo</span>
+                              <input id="file-upload" name="file-upload" type="file" className="sr-only" />
+                            </label>
+                            <p className="pl-1">o arrastrar y soltar</p>
+                          </div>
+                          <p className="text-xs text-gray-500">PNG, JPG, PDF hasta 10MB</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="mt-6">
+                      <button
+                        type="submit"
+                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      >
+                        Enviar información de pago
+                      </button>
                     </div>
                   </div>
-                )}
-                
-                {/* Pestaña de recarga con Stripe */}
-                {activeTab === 'stripe' && (
-                  <Elements stripe={stripePromise}>
-                    <StripeCheckout onSuccess={handleStripeSuccess} />
-                  </Elements>
-                )}
-              </div>
+                </TabPanel>
+              </Tabs>
             </div>
-          </div>
-        </div>
-      </div>
-      
-      {/* Historial de transacciones */}
-      <div className="card mb-4">
-        <div className="card-header">
-          <h2 className="card-title mb-0">Historial de Transacciones</h2>
-        </div>
-        <div className="card-body p-0">
-          {transactions.length === 0 ? (
-            <div className="text-center py-4">
-              <p className="text-muted">No hay transacciones para mostrar</p>
+          </TabPanel>
+
+          <TabPanel>
+            <div>
+              <h3 className="text-xl font-semibold mb-4">Historial de transacciones</h3>
+              
+              {loadingTransactions ? (
+                <div className="text-center py-6">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+                  <p className="mt-2">Cargando transacciones...</p>
+                </div>
+              ) : (
+                <>
+                  {transactionsData && transactionsData.transactions && transactionsData.transactions.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Fecha
+                            </th>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Tipo
+                            </th>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Descripción
+                            </th>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Monto
+                            </th>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Saldo resultante
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {transactionsData.transactions.map(transaction => (
+                            <tr key={transaction._id}>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                                {format(new Date(transaction.date), 'dd/MM/yyyy HH:mm')}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                  ${transaction.type === 'deposit' ? 'bg-green-100 text-green-800' : 
+                                  transaction.type === 'charge' ? 'bg-red-100 text-red-800' :
+                                  'bg-blue-100 text-blue-800'}`}
+                                >
+                                  {transaction.type === 'deposit' ? 'Recarga' : 
+                                   transaction.type === 'charge' ? 'Cargo' : 
+                                   transaction.type}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {transaction.description}
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                <span className={transaction.type === 'deposit' ? 'text-green-600' : 'text-red-600'}>
+                                  {transaction.type === 'deposit' ? '+' : '-'}${Math.abs(transaction.amount || 0).toFixed(2)}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                ${(transaction.balanceAfter || 0).toFixed(2)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-center py-10 text-gray-500">
+                      No hay transacciones disponibles
+                    </div>
+                  )}
+                </>
+              )}
             </div>
-          ) : (
-            <div className="table-responsive">
-              <table className="table table-hover">
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Tipo</th>
-                    <th>Monto</th>
-                    <th>Descripción</th>
-                    <th>Estado</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {transactions.map((transaction) => (
-                    <tr key={transaction._id}>
-                      <td>{new Date(transaction.createdAt).toLocaleDateString()}</td>
-                      <td>
-                        <span className={`badge ${transaction.type === 'recharge' ? 'bg-success' : 'bg-danger'}`}>
-                          {transaction.type === 'recharge' ? 'Recarga' : 'Consumo'}
-                        </span>
-                      </td>
-                      <td>${transaction.amount.toFixed(2)}</td>
-                      <td>{transaction.description}</td>
-                      <td>
-                        <span className={`badge bg-${
-                          transaction.status === 'completed' ? 'primary' : 
-                          transaction.status === 'pending' ? 'warning' : 'secondary'
-                        }`}>
-                          {transaction.status === 'completed' ? 'Completado' : 
-                           transaction.status === 'pending' ? 'Pendiente' : transaction.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-      
-      {/* Desglose por campaña */}
-      <div className="card">
-        <div className="card-header">
-          <h2 className="card-title mb-0">Consumo por Campaña</h2>
-        </div>
-        <div className="card-body p-0">
-          {campaignCosts.length === 0 ? (
-            <div className="text-center py-4">
-              <p className="text-muted">No hay datos de consumo por campaña</p>
-            </div>
-          ) : (
-            <div className="table-responsive">
-              <table className="table table-hover">
-                <thead>
-                  <tr>
-                    <th>Campaña</th>
-                    <th>Estado</th>
-                    <th>Llamadas</th>
-                    <th>Minutos</th>
-                    <th>Costo</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {campaignCosts.map((campaign) => (
-                    <tr key={campaign._id}>
-                      <td>{campaign.name}</td>
-                      <td>
-                        <span className={`badge ${campaign.status === 'active' ? 'bg-success' : 'bg-warning'}`}>
-                          {campaign.status === 'active' ? 'Activa' : 'Pausada'}
-                        </span>
-                      </td>
-                      <td>{campaign.calls}</td>
-                      <td>{campaign.totalMinutes}</td>
-                      <td>${campaign.cost.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+          </TabPanel>
+        </Tabs>
       </div>
     </div>
   );

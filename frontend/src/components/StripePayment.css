@@ -1,131 +1,102 @@
+/* src/components/StripePayment.css */
+
 .stripe-payment-container {
-  padding: 20px 0;
+  width: 100%;
+  padding: 10px 0;
 }
 
-.stripe-card-placeholder {
-  height: 40px;
-  background-color: #f8f9fa;
+.card-element {
   border: 1px solid #e2e8f0;
-  border-radius: 4px;
-  padding: 10px 14px;
+  border-radius: 0.375rem;
+  padding: 12px;
+  background-color: white;
 }
 
-.alert {
-  padding: 12px 16px;
-  margin-bottom: 16px;
-  border: 1px solid transparent;
-  border-radius: 4px;
+.spinner,
+.spinner:before,
+.spinner:after {
+  border-radius: 50%;
 }
 
-.alert-danger {
-  color: #721c24;
-  background-color: #f8d7da;
-  border-color: #f5c6cb;
+.spinner {
+  color: #ffffff;
+  font-size: 22px;
+  text-indent: -99999px;
+  margin: 0 auto;
+  position: relative;
+  width: 20px;
+  height: 20px;
+  box-shadow: inset 0 0 0 2px;
+  -webkit-transform: translateZ(0);
+  -ms-transform: translateZ(0);
+  transform: translateZ(0);
 }
 
-.alert-success {
-  color: #155724;
-  background-color: #d4edda;
-  border-color: #c3e6cb;
+.spinner:before,
+.spinner:after {
+  position: absolute;
+  content: '';
 }
 
-.card-element-container {
-  background: white;
-  margin-bottom: 16px;
+.spinner:before {
+  width: 10.4px;
+  height: 20.4px;
+  background: #5469d4;
+  border-radius: 20.4px 0 0 20.4px;
+  top: -0.2px;
+  left: -0.2px;
+  -webkit-transform-origin: 10.4px 10.2px;
+  transform-origin: 10.4px 10.2px;
+  -webkit-animation: loading 2s infinite ease 1.5s;
+  animation: loading 2s infinite ease 1.5s;
 }
 
-/* Estilos para el formulario */
-.form-group {
-  margin-bottom: 16px;
+.spinner:after {
+  width: 10.4px;
+  height: 10.2px;
+  background: #5469d4;
+  border-radius: 0 10.2px 10.2px 0;
+  top: -0.1px;
+  left: 10.2px;
+  -webkit-transform-origin: 0px 10.2px;
+  transform-origin: 0px 10.2px;
+  -webkit-animation: loading 2s infinite ease;
+  animation: loading 2s infinite ease;
 }
 
-.form-group label {
-  display: block;
-  margin-bottom: 6px;
-  font-weight: 500;
+@keyframes loading {
+  0% {
+    -webkit-transform: rotate(0deg);
+    transform: rotate(0deg);
+  }
+  100% {
+    -webkit-transform: rotate(360deg);
+    transform: rotate(360deg);
+  }
 }
 
-.form-control {
-  display: block;
-  width: 100%;
-  padding: 8px 12px;
-  font-size: 16px;
-  line-height: 1.5;
-  color: #495057;
-  background-color: #fff;
-  border: 1px solid #ced4da;
-  border-radius: 4px;
-  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
-}
-
-.form-control:focus {
-  border-color: #80bdff;
+/* Estilos para diferentes estados de la tarjeta */
+.StripeElement--focus {
+  box-shadow: 0 0 0 2px #3b82f6;
   outline: 0;
-  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
 }
 
-.btn {
-  display: inline-block;
-  font-weight: 400;
-  text-align: center;
-  vertical-align: middle;
-  cursor: pointer;
-  padding: 8px 16px;
-  font-size: 16px;
-  line-height: 1.5;
-  border-radius: 4px;
-  transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+.StripeElement--invalid {
+  border-color: #fa755a;
 }
 
-.btn-primary {
-  color: #fff;
-  background-color: #007bff;
-  border-color: #007bff;
+.StripeElement--webkit-autofill {
+  background-color: #fefde5 !important;
 }
 
-.btn-primary:hover {
-  color: #fff;
-  background-color: #0069d9;
-  border-color: #0062cc;
+/* Estilos para el mensaje de éxito */
+.payment-success {
+  border-left: 4px solid #10b981;
 }
 
-.btn-outline-primary {
-  color: #007bff;
-  border-color: #007bff;
-  background-color: transparent;
-}
-
-.btn-outline-primary:hover {
-  color: #fff;
-  background-color: #007bff;
-  border-color: #007bff;
-}
-
-.w-100 {
-  width: 100%;
-}
-
-.text-center {
-  text-align: center;
-}
-
-.mb-4 {
-  margin-bottom: 16px;
-}
-
-.mt-2 {
-  margin-top: 8px;
-}
-
-/* Animación para el estado de carga */
-@keyframes pulse {
-  0% { opacity: 0.6; }
-  50% { opacity: 1; }
-  100% { opacity: 0.6; }
-}
-
-button:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-  animation: pulse 1.5s infinite;
+/* Responsivo para dispositivos móviles */
+@media screen and (max-width: 640px) {
+  .card-element {
+    padding: 10px;
+  }
 }

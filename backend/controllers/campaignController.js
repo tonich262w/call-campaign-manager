@@ -8,6 +8,7 @@ const multer = require('multer');
 const csv = require('csv-parser');
 const fs = require('fs');
 const path = require('path');
+const { Parser } = require('json2csv'); // Importar json2csv
 
 // Configuración para subida de archivos
 const storage = multer.diskStorage({
@@ -34,8 +35,60 @@ const upload = multer({
 // Obtener todas las campañas del usuario
 const getCampaigns = async (req, res) => {
   try {
+    // Intentar obtener campañas reales de Voximplant
+    try {
+      // Obtener campañas reales de Voximplant
+      const voximplantCampaigns = await voximplantService.getAllCampaigns();
+      
+      if (voximplantCampaigns && voximplantCampaigns.length > 0) {
+        // Actualizar o crear campañas en nuestra base de datos
+        for (const voxCampaign of voximplantCampaigns) {
+          // Verificar si ya existe la campaña en nuestra base de datos
+          let campaign = await Campaign.findOne({ 
+            externalId: voxCampaign.id,
+            userId: req.user._id 
+          });
+          
+          if (campaign) {
+            // Actualizar la campaña existente
+            campaign.name = voxCampaign.name;
+            campaign.description = voxCampaign.description;
+            campaign.status = voxCampaign.status;
+            campaign.totalLeads = voxCampaign.totalLeads;
+            campaign.completedCalls = voxCampaign.completedCalls;
+            campaign.successfulCalls = voxCampaign.successfulCalls;
+            await campaign.save();
+          } else {
+            // Crear una nueva campaña
+            await Campaign.create({
+              externalId: voxCampaign.id,
+              name: voxCampaign.name,
+              description: voxCampaign.description,
+              startDate: new Date(),
+              endDate: new Date(new Date().setMonth(new Date().getMonth() + 1)),
+              status: voxCampaign.status,
+              totalLeads: voxCampaign.totalLeads,
+              completedCalls: voxCampaign.completedCalls,
+              successfulCalls: voxCampaign.successfulCalls,
+              userId: req.user._id
+            });
+          }
+        }
+        
+        // Obtener las campañas actualizadas de la base de datos
+        const campaigns = await Campaign.find({ userId: req.user._id })
+          .select('-externalId'); // No exponemos el ID en Voximplant
+        
+        return res.status(200).json(campaigns);
+      }
+    } catch (voxError) {
+      console.error('Error al obtener campañas de Voximplant:', voxError);
+      // Si hay error, continuamos con las campañas de la base de datos
+    }
+    
+    // Si no pudimos obtener campañas de Voximplant, usamos las de la base de datos
     const campaigns = await Campaign.find({ userId: req.user._id })
-      .select('-externalId'); // No exponemos el ID en Voximplant
+      .select('-externalId');
     
     res.status(200).json(campaigns);
   } catch (error) {
@@ -47,8 +100,24 @@ const getCampaigns = async (req, res) => {
 // Obtener una campaña específica
 const getCampaignById = async (req, res) => {
   try {
+    console.log('ID recibido en getCampaignById:', req.params.id);
+    
+    // Validar formato de ID
+    let campaignId;
+    try {
+      const mongoose = require('mongoose');
+      if (mongoose.Types.ObjectId.isValid(req.params.id)) {
+        campaignId = req.params.id; // Mantener el ID como string, MongoDB lo convertirá automáticamente
+      } else {
+        return res.status(400).json({ message: 'ID de campaña inválido' });
+      }
+    } catch (idError) {
+      console.error('Error al validar ID:', idError);
+      return res.status(400).json({ message: 'Formato de ID inválido' });
+    }
+    
     const campaign = await Campaign.findOne({
-      _id: req.params.id,
+      _id: campaignId,
       userId: req.user._id
     }).select('-externalId');
     
@@ -75,7 +144,7 @@ const getCampaignById = async (req, res) => {
     }
     
     // Obtener leads de esta campaña
-    const leads = await Lead.find({ campaignId: req.params.id })
+    const leads = await Lead.find({ campaignId: campaignId })
       .limit(100); // Limitamos para no sobrecargar
     
     res.status(200).json({
@@ -238,6 +307,64 @@ const resumeCampaign = async (req, res) => {
   } catch (error) {
     console.error('Error al reanudar campaña:', error);
     res.status(500).json({ message: 'Error al reanudar la campaña' });
+  }
+};
+
+// Actualizar una campaña
+const updateCampaign = async (req, res) => {
+  try {
+    console.log('ID recibido en updateCampaign:', req.params.id);
+    console.log('Datos recibidos:', req.body);
+    
+    // Validar formato de ID
+    let campaignId;
+    try {
+      const mongoose = require('mongoose');
+      if (mongoose.Types.ObjectId.isValid(req.params.id)) {
+        campaignId = req.params.id;
+      } else {
+        return res.status(400).json({ message: 'ID de campaña inválido' });
+      }
+    } catch (idError) {
+      console.error('Error al validar ID:', idError);
+      return res.status(400).json({ message: 'Formato de ID inválido' });
+    }
+    
+    // Buscar la campaña
+    const campaign = await Campaign.findOne({
+      _id: campaignId,
+      userId: req.user._id
+    });
+    
+    if (!campaign) {
+      return res.status(404).json({ message: 'Campaña no encontrada' });
+    }
+    
+    // Actualizar los campos permitidos
+    const allowedFields = [
+      'name', 'description', 'startDate', 'endDate', 'timezone',
+      'callHoursStart', 'callHoursEnd', 'callDays', 'script', 'status'
+    ];
+    
+    // Solo actualizamos los campos permitidos que se proporcionan
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        campaign[field] = req.body[field];
+      }
+    });
+    
+    // Si la campaña está registrada en Voximplant y hay cambios en horarios o script
+    // Podríamos actualizar en Voximplant, pero por ahora solo lo guardamos localmente
+    
+    await campaign.save();
+    
+    res.status(200).json({
+      message: 'Campaña actualizada exitosamente',
+      campaign
+    });
+  } catch (error) {
+    console.error('Error al actualizar campaña:', error);
+    res.status(500).json({ message: 'Error al actualizar la campaña' });
   }
 };
 
@@ -475,14 +602,68 @@ const voximplantWebhook = async (req, res) => {
   }
 };
 
+// Exportar progreso de la campaña en CSV
+const exportCampaignProgress = async (req, res) => {
+  try {
+    const campaignId = req.params.id;
+
+    // 1. Buscar la campaña en nuestra base de datos para obtener el ID externo
+    const campaign = await Campaign.findById(campaignId);
+    if (!campaign || !campaign.externalId) {
+      return res.status(404).json({ message: 'Campaña no encontrada o sin ID externo' });
+    }
+
+    // 2. Obtener detalles de la lista de llamadas de Voximplant
+    let callListDetails;
+    try {
+      // Necesitaremos implementar esta función en voximplantService
+      callListDetails = await voximplantService.getCampaignCallListDetails(campaign.externalId);
+      if (!callListDetails || callListDetails.length === 0) {
+        return res.status(404).json({ message: 'No se encontraron detalles de llamadas para esta campaña en Voximplant.' });
+      }
+    } catch (voxError) {
+      console.error('Error al obtener detalles de llamadas de Voximplant:', voxError);
+      return res.status(500).json({ message: 'Error al contactar con Voximplant para obtener los detalles.' });
+    }
+
+    // 3. Definir los campos para el CSV (ajustar según los datos reales de Voximplant)
+    const fields = [
+      { label: 'Número de Teléfono', value: 'phone_number' }, // Ajustar nombres de campo
+      { label: 'Estado Última Llamada', value: 'last_call_status' },
+      { label: 'Intentos', value: 'attempts' },
+      { label: 'Último Intento', value: 'last_attempt_time' },
+      { label: 'Duración Total (seg)', value: 'total_duration_seconds' },
+      { label: 'Costo Total', value: 'total_cost' },
+      // Añadir más campos si es necesario
+    ];
+
+    // 4. Crear el parser CSV
+    const json2csvParser = new Parser({ fields });
+    const csvData = json2csvParser.parse(callListDetails);
+
+    // 5. Configurar la respuesta para descargar el archivo
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=campaign_${campaign.name}_progress_${Date.now()}.csv`);
+
+    // 6. Enviar el CSV
+    res.status(200).send(csvData);
+
+  } catch (error) {
+    console.error('Error al exportar progreso de la campaña:', error);
+    res.status(500).json({ message: 'Error interno al generar el archivo de progreso.' });
+  }
+};
+
 module.exports = {
   getCampaigns,
   getCampaignById,
   createCampaign,
+  updateCampaign,
   pauseCampaign,
   resumeCampaign,
   deleteCampaign,
   importLeads,
   updateLeadStatus,
-  voximplantWebhook
+  voximplantWebhook,
+  exportCampaignProgress
 };

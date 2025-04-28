@@ -1,254 +1,271 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { balanceService, campaignService } from '../services/callService';
+// src/pages/DashboardPage.js
 
-const ImprovedDashboard = () => {
-  const [stats, setStats] = useState({
-    activeCampaigns: 0,
-    totalCalls: 0,
-    successRate: 0,
-    balance: 0
-  });
+import React from 'react';
+import useDataFetcher from '../hooks/useDataFetcher';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
+import { format } from 'date-fns';
+import { FaPhoneAlt, FaAddressBook, FaWallet, FaChartLine, FaSync } from 'react-icons/fa';
+import { Dashboard as DashboardService } from '../services/apiService';
+
+const DashboardPage = () => {
+  const { user } = useAuth();
   
-  const [recentCampaigns, setRecentCampaigns] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { 
+    data: dashboardData, 
+    loading, 
+    error,
+    refreshData,
+    lastUpdated
+  } = useDataFetcher(DashboardService.getData, 60000);
   
-  useEffect(() => {
-    // Function to load dashboard data
-    const loadDashboardData = async () => {
-      try {
-        setLoading(true);
-        
-        // In a real app, these would be API calls using the service functions
-        // For now, we'll simulate with a timeout
-        
-        setTimeout(() => {
-          // Mock data - replace with actual API calls in production
-          setStats({
-            activeCampaigns: 3,
-            totalCalls: 1250,
-            successRate: 76,
-            balance: 348.50
-          });
-          
-          setRecentCampaigns([
-            { id: 1, name: 'Campaña Ventas Q1', status: 'active', calls: 450, success: 320 },
-            { id: 2, name: 'Promoción Verano', status: 'paused', calls: 320, success: 250 },
-            { id: 3, name: 'Encuesta Satisfacción', status: 'active', calls: 480, success: 390 }
-          ]);
-          
-          setLoading(false);
-        }, 1000);
-        
-        // In production, use these service calls:
-        /*
-        // Get active campaigns
-        const campaigns = await campaignService.getAll();
-        const activeCampaigns = campaigns.filter(c => c.status === 'active');
-        
-        // Get balance
-        const balanceData = await balanceService.getBalance();
-        
-        // Get call statistics (would need a separate API endpoint)
-        const callStats = await campaignService.getTotalCallStats();
-        
-        setStats({
-          activeCampaigns: activeCampaigns.length,
-          totalCalls: callStats.totalCalls,
-          successRate: callStats.successRate,
-          balance: balanceData.currentBalance
-        });
-        
-        // Get recent campaigns
-        setRecentCampaigns(campaigns.slice(0, 3));
-        */
-      } catch (err) {
-        console.error("Error loading dashboard data:", err);
-        setError("No se pudieron cargar los datos del dashboard. Por favor, intente nuevamente.");
-        setLoading(false);
-      }
-    };
-    
-    loadDashboardData();
-  }, []);
-  
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-      </div>
-    );
-  }
-  
-  if (error) {
-    return (
-      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert">
-        <strong className="font-bold">Error:</strong>
-        <span className="block sm:inline"> {error}</span>
-      </div>
-    );
-  }
-  
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    await refreshData();
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
+
   return (
-    <div>
-      <h1 className="text-2xl font-semibold text-gray-800 mb-6">Panel de Control</h1>
-      
-      {/* Stats cards */}
-      <div className="dashboard-cards">
-        <div className="dashboard-card">
-          <h3>Campañas Activas</h3>
-          <p className="card-value">{stats.activeCampaigns}</p>
-          <p className="text-gray-500">Campañas en curso</p>
-          <Link 
-            to="/campaigns" 
-            className="text-sm text-blue-600 hover:text-blue-800 mt-2 inline-block"
+    <div className="p-4">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <div className="flex items-center">
+          {lastUpdated && (
+            <span className="text-sm text-gray-500 mr-3">
+              Última actualización: {format(new Date(lastUpdated), 'HH:mm:ss')}
+            </span>
+          )}
+          <button 
+            onClick={handleManualRefresh}
+            disabled={loading || isRefreshing}
+            className={`flex items-center bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded
+              ${(loading || isRefreshing) ? 'opacity-70 cursor-not-allowed' : ''}`}
           >
-            Ver campañas
-          </Link>
-        </div>
-        
-        <div className="dashboard-card">
-          <h3>Total Llamadas</h3>
-          <p className="card-value">{stats.totalCalls}</p>
-          <p className="text-gray-500">Llamadas realizadas</p>
-        </div>
-        
-        <div className="dashboard-card">
-          <h3>Ratio de Éxito</h3>
-          <p className="card-value">{stats.successRate}%</p>
-          <p className="text-gray-500">Porcentaje de llamadas completadas</p>
-        </div>
-        
-        <div className="dashboard-card">
-          <h3>Saldo Disponible</h3>
-          <p className="card-value">${stats.balance.toFixed(2)}</p>
-          <p className="text-gray-500">Para realizar llamadas</p>
-          <Link 
-            to="/balance" 
-            className="text-sm text-blue-600 hover:text-blue-800 mt-2 inline-block"
-          >
-            Recargar saldo
-          </Link>
+            <FaSync className={`mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+            Actualizar
+          </button>
         </div>
       </div>
-      
-      {/* Recent campaigns */}
-      <div className="bg-white rounded-lg shadow-sm p-6 mt-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-gray-800">Campañas Recientes</h2>
-          <Link 
-            to="/campaigns" 
-            className="text-sm text-blue-600 hover:text-blue-800"
+
+      {loading && !dashboardData && (
+        <div className="text-center py-6">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+          <p className="mt-2">Cargando información del dashboard...</p>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6">
+          <p>{error}</p>
+          <button 
+            onClick={refreshData}
+            className="text-red-700 underline mt-2"
           >
-            Ver todas
-          </Link>
+            Intentar nuevamente
+          </button>
         </div>
-        
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead>
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Nombre
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Estado
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Llamadas
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Éxito
-                </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Acciones
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {recentCampaigns.map(campaign => (
-                <tr key={campaign.id}>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="font-medium text-gray-900">{campaign.name}</div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`badge ${
-                      campaign.status === 'active' 
-                        ? 'badge-green' 
-                        : 'badge-yellow'
-                    }`}>
-                      {campaign.status === 'active' ? 'Activa' : 'Pausada'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-900">
-                    {campaign.calls}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-900">
-                    {campaign.success} ({Math.round(campaign.success / campaign.calls * 100)}%)
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                    <Link to={`/campaigns/${campaign.id}`} className="text-blue-600 hover:text-blue-900 mr-4">
-                      Ver
-                    </Link>
-                    <Link to={`/campaigns/${campaign.id}/edit`} className="text-indigo-600 hover:text-indigo-900">
-                      Editar
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      )}
+
+      {/* Tarjetas de resumen */}
+      {dashboardData && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white p-6 rounded-lg shadow">
+            <div className="flex items-center">
+              <div className="p-3 rounded-full bg-blue-100 text-blue-500 mr-4">
+                <FaPhoneAlt className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Campañas activas</p>
+                <p className="text-xl font-semibold">{dashboardData.activeCampaigns}</p>
+              </div>
+            </div>
+            <div className="mt-4">
+              <Link to="/campaigns" className="text-blue-500 text-sm hover:underline">
+                Ver todas las campañas
+              </Link>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow">
+            <div className="flex items-center">
+              <div className="p-3 rounded-full bg-green-100 text-green-500 mr-4">
+                <FaAddressBook className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Contactos totales</p>
+                <p className="text-xl font-semibold">{dashboardData.totalLeads}</p>
+              </div>
+            </div>
+            <div className="mt-4">
+              <Link to="/leads" className="text-blue-500 text-sm hover:underline">
+                Ver todos los contactos
+              </Link>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow">
+            <div className="flex items-center">
+              <div className="p-3 rounded-full bg-yellow-100 text-yellow-500 mr-4">
+                <FaChartLine className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Tasa de contacto</p>
+                <p className="text-xl font-semibold">{`${dashboardData.contactRate}%`}</p>
+              </div>
+            </div>
+            <div className="mt-4">
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div 
+                  className="bg-yellow-500 h-2 rounded-full" 
+                  style={{ width: `${dashboardData.contactRate}%` }}
+                ></div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-lg shadow">
+            <div className="flex items-center">
+              <div className="p-3 rounded-full bg-purple-100 text-purple-500 mr-4">
+                <FaWallet className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-500">Saldo disponible</p>
+                <p className="text-xl font-semibold">${dashboardData.availableBalance.toFixed(2)}</p>
+              </div>
+            </div>
+            <div className="mt-4">
+              <Link to="/balance" className="text-blue-500 text-sm hover:underline">
+                Gestionar saldo
+              </Link>
+            </div>
+          </div>
         </div>
+      )}
+
+      {/* Actividad reciente y campañas activas */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Campañas activas */}
+        {dashboardData && (
+          <div className="bg-white rounded-lg shadow">
+            <div className="border-b border-gray-200 px-6 py-4">
+              <h2 className="text-lg font-medium">Campañas activas</h2>
+            </div>
+            <div className="px-6 py-4">
+              {dashboardData.recentCampaigns && dashboardData.recentCampaigns.length > 0 ? (
+                <div className="divide-y divide-gray-200">
+                  {dashboardData.recentCampaigns.map(campaign => (
+                    <div key={campaign._id} className="py-3 flex justify-between items-center">
+                      <div>
+                        <h3 className="text-sm font-medium">{campaign.name}</h3>
+                        <div className="flex items-center mt-1">
+                          <span className={`w-2 h-2 rounded-full mr-2 ${
+                            campaign.status === 'active' ? 'bg-green-500' : 
+                            campaign.status === 'paused' ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}></span>
+                          <span className="text-xs text-gray-500 capitalize">
+                            {campaign.status === 'active' ? 'Activa' : 
+                            campaign.status === 'paused' ? 'Pausada' : campaign.status}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {campaign.progress}% completado
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-center py-4">No hay campañas activas</p>
+              )}
+              <div className="mt-4">
+                <Link 
+                  to="/campaigns" 
+                  className="w-full block text-center py-2 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 text-sm"
+                >
+                  Ver todas las campañas
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Actividad reciente */}
+        {dashboardData && (
+          <div className="bg-white rounded-lg shadow">
+            <div className="border-b border-gray-200 px-6 py-4">
+              <h2 className="text-lg font-medium">Actividad reciente</h2>
+            </div>
+            <div className="px-6 py-4">
+              {dashboardData.recentActivity && dashboardData.recentActivity.length > 0 ? (
+                <div className="divide-y divide-gray-200">
+                  {dashboardData.recentActivity.map(activity => (
+                    <div key={activity._id} className="py-3">
+                      <div className="flex items-center">
+                        <div className={`p-2 rounded-full mr-3 ${
+                          activity.type === 'campaign' ? 'bg-blue-100 text-blue-500' :
+                          activity.type === 'lead' ? 'bg-green-100 text-green-500' :
+                          activity.type === 'payment' ? 'bg-purple-100 text-purple-500' :
+                          'bg-gray-100 text-gray-500'
+                        }`}>
+                          {activity.type === 'campaign' ? <FaPhoneAlt className="h-4 w-4" /> :
+                           activity.type === 'lead' ? <FaAddressBook className="h-4 w-4" /> :
+                           activity.type === 'payment' ? <FaWallet className="h-4 w-4" /> :
+                           <FaChartLine className="h-4 w-4" />}
+                        </div>
+                        <div>
+                          <p className="text-sm">{activity.description}</p>
+                          <p className="text-xs text-gray-500">{format(new Date(activity.date), 'dd/MM/yyyy HH:mm')}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-center py-4">No hay actividad reciente</p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
-      
-      {/* Quick actions */}
-      <div className="bg-white rounded-lg shadow-sm p-6 mt-6">
-        <h2 className="text-lg font-semibold text-gray-800 mb-4">Acciones Rápidas</h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Link 
-            to="/campaigns/new" 
-            className="p-4 bg-indigo-50 rounded-lg flex items-center transition-all hover:bg-indigo-100"
-          >
-            <div className="bg-indigo-100 p-3 rounded-full mr-4">
-              <i className="fas fa-plus text-indigo-600"></i>
-            </div>
-            <div>
-              <h3 className="font-medium text-gray-900">Nueva Campaña</h3>
-              <p className="text-sm text-gray-500">Crear una campaña de llamadas</p>
-            </div>
-          </Link>
+
+      {/* Panel de administrador */}
+      {user && user.role === 'admin' && dashboardData && dashboardData.adminStats && (
+        <div className="mt-8">
+          <div className="mb-4 border-b border-gray-200">
+            <h2 className="text-xl font-semibold mb-2">Panel de administrador</h2>
+          </div>
           
-          <Link 
-            to="/leads/import" 
-            className="p-4 bg-green-50 rounded-lg flex items-center transition-all hover:bg-green-100"
-          >
-            <div className="bg-green-100 p-3 rounded-full mr-4">
-              <i className="fas fa-upload text-green-600"></i>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg text-gray-500 mb-2">Ingresos totales</h3>
+              <div className="text-3xl font-bold">${dashboardData.adminStats.totalRevenue.toFixed(2)}</div>
+              <div className="mt-2 text-sm text-gray-500">
+                Mes actual: ${dashboardData.adminStats.currentMonthRevenue.toFixed(2)}
+              </div>
             </div>
-            <div>
-              <h3 className="font-medium text-gray-900">Importar Contactos</h3>
-              <p className="text-sm text-gray-500">Añadir nuevos contactos</p>
+            
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg text-gray-500 mb-2">Costo operativo</h3>
+              <div className="text-3xl font-bold">${dashboardData.adminStats.operationalCost.toFixed(2)}</div>
+              <div className="mt-2 text-sm text-gray-500">
+                Mes actual: ${dashboardData.adminStats.currentMonthCost.toFixed(2)}
+              </div>
             </div>
-          </Link>
-          
-          <Link 
-            to="/reports" 
-            className="p-4 bg-blue-50 rounded-lg flex items-center transition-all hover:bg-blue-100"
-          >
-            <div className="bg-blue-100 p-3 rounded-full mr-4">
-              <i className="fas fa-chart-pie text-blue-600"></i>
+            
+            <div className="bg-white p-6 rounded-lg shadow">
+              <h3 className="text-lg text-gray-500 mb-2">Usuarios activos</h3>
+              <div className="text-3xl font-bold">{dashboardData.adminStats.activeUsers}</div>
+              <div className="mt-2 text-sm text-gray-500">
+                Nuevos este mes: {dashboardData.adminStats.newUsers}
+              </div>
             </div>
-            <div>
-              <h3 className="font-medium text-gray-900">Ver Reportes</h3>
-              <p className="text-sm text-gray-500">Analizar rendimiento</p>
-            </div>
-          </Link>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
 
-export default ImprovedDashboard;
+export default DashboardPage;

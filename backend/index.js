@@ -1,63 +1,58 @@
+// app.js o server.js
+require('dotenv').config();
 const express = require('express');
+const mongoose = require('mongoose');
 const cors = require('cors');
-const dotenv = require('dotenv');
-const morgan = require('morgan');
 const path = require('path');
-const { notFound, errorHandler } = require('./middlewares/errorMiddleware');
 
-// Cargar variables de entorno
-dotenv.config();
+// Importar rutas
+const authRoutes = require('./routes/authRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
+const campaignRoutes = require('./routes/campaignRoutes');
+const leadRoutes = require('./routes/leadRoutes');
+const balanceRoutes = require('./routes/balanceRoutes');
+const reportRoutes = require('./routes/reportRoutes');
+const userRoutes = require('./routes/userRoutes');
 
-// Inicializar Express
+console.log('MONGODB_URI:', process.env.MONGODB_URI ? 'Definida (correcto)' : 'No definida (error)');
+// Otros imports...
+
 const app = express();
 
 // Middlewares
 app.use(cors());
-
-// Para la ruta del webhook de Stripe necesitamos el body raw
-app.use('/api/stripe/webhook', express.raw({type: 'application/json'}));
-
-// Para el resto de rutas usamos JSON
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
-// Logging en desarrollo
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-}
-
-// Carpeta para archivos temporales
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-
-// Asegurarse de que existe la carpeta uploads
-const fs = require('fs');
-if (!fs.existsSync('./uploads')) {
-  fs.mkdirSync('./uploads');
-}
-
-// Rutas
-app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/balance', require('./routes/balanceRoutes'));
-app.use('/api/campaigns', require('./routes/campaignRoutes'));
-app.use('/api/leads', require('./routes/leadRoutes'));
-app.use('/api/reports', require('./routes/reportRoutes'));
-app.use('/api/stripe', require('./routes/stripeRoutes')); // Nuevas rutas para Stripe
-
-// Ruta de prueba
-app.get('/', (req, res) => {
-  res.send('API está funcionando correctamente');
-});
-
-// Middleware para manejar rutas no encontradas
-app.use(notFound);
-
-// Middleware para manejar errores
-app.use(errorHandler);
-
-// Puerto
-const PORT = process.env.PORT || 5000;
-
-// Iniciar servidor
-app.listen(PORT, () => {
-  console.log(`Servidor corriendo en puerto ${PORT}`);
+// Conexión a MongoDB - IMPORTANTE: establece la conexión antes de definir las rutas
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  serverSelectionTimeoutMS: 15000
+})
+.then(() => {
+  console.log(' Conexión a MongoDB Atlas establecida correctamente');
+  
+  // Rutas - definidas DESPUÉS de establecer la conexión
+  app.use('/api/auth', authRoutes);
+  app.use('/api/dashboard', dashboardRoutes);
+  app.use('/api/campaigns', campaignRoutes);
+  app.use('/api/leads', leadRoutes);
+  app.use('/api/balance', balanceRoutes);
+  app.use('/api/reports', reportRoutes);
+  app.use('/api/users', userRoutes);
+  
+  // Crear directorio de uploads si no existe
+  const uploadsDir = path.join(__dirname, 'uploads');
+  if (!require('fs').existsSync(uploadsDir)) {
+    require('fs').mkdirSync(uploadsDir);
+  }
+  
+  // Iniciar servidor DESPUÉS de conectar a MongoDB
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`Servidor ejecutándose en puerto ${PORT}`);
+  });
+})
+.catch(err => {
+  console.error('❌ Error al conectar a MongoDB:', err.message);
 });

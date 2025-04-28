@@ -1,3 +1,5 @@
+import { Campaign } from '../../services/apiService';
+
 const NewCampaignPage = () => {
   const [formData, setFormData] = useState({
     name: '',
@@ -69,17 +71,29 @@ const NewCampaignPage = () => {
     setIsSubmitting(true);
     
     try {
-      // Aquí se implementaría la llamada a la API
-      console.log('Datos de la campaña a enviar:', formData);
+      // Formatear los datos para el backend
+      const campaignData = {
+        name: formData.name,
+        description: formData.description,
+        startDate: new Date(formData.startDate).toISOString(),
+        endDate: new Date(formData.endDate).toISOString(),
+        timezone: formData.timezone,
+        callHoursStart: formData.callHoursStart,
+        callHoursEnd: formData.callHoursEnd,
+        callDays: formData.callDays,
+        maxAttempts: parseInt(formData.maxAttempts),
+        callScript: formData.callScript,
+        targetAudience: formData.targetAudience
+      };
       
-      // Simulamos la respuesta exitosa
-      setTimeout(() => {
-        alert('¡Campaña creada exitosamente!');
-        window.location.href = '/campaigns';
-      }, 1000);
+      // Llamar a la API para crear la campaña en Voximplant
+      const response = await Campaign.create(campaignData);
+      
+      alert('¡Campaña creada exitosamente!');
+      window.location.href = '/campaigns';
     } catch (error) {
       console.error('Error al crear la campaña:', error);
-      setErrors({ form: 'Error al crear la campaña. Intente nuevamente.' });
+      setErrors({ form: 'Error al crear la campaña en Voximplant. Intente nuevamente.' });
     } finally {
       setIsSubmitting(false);
     }

@@ -1,146 +1,192 @@
-import React, { useState } from 'react';
-import { CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
-import './StripePayment.css';
+// src/components/StripePayment.js
 
-const StripePayment = ({ onSuccess }) => {
-  const [amount, setAmount] = useState('');
-  const [loading, setLoading] = useState(false);
+import React, { useState, useEffect } from 'react';
+import { loadStripe } from '@stripe/stripe-js';
+import {
+  CardElement,
+  Elements,
+  useStripe,
+  useElements,
+} from '@stripe/react-stripe-js';
+import axios from 'axios';
+import './StripePayment.css'; // Importamos los estilos específicos
+
+// Componente del formulario de pago
+const CheckoutForm = ({ amount = 50 }) => {
+  const [succeeded, setSucceeded] = useState(false);
   const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [disabled, setDisabled] = useState(true);
+  const [clientSecret, setClientSecret] = useState('');
   
   const stripe = useStripe();
   const elements = useElements();
 
-  const handleAmountChange = (e) => {
-    setAmount(e.target.value);
+  const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+
+  useEffect(() => {
+    // Crear PaymentIntent tan pronto como la página cargue
+    const createPaymentIntent = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const response = await axios.post(
+          `${API_URL}/stripe/create-payment-intent`, 
+          { amount: amount * 100 }, // Stripe usa centavos
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            }
+          }
+        );
+        
+        setClientSecret(response.data.clientSecret);
+      } catch (err) {
+        setError('Error al preparar el pago. Por favor, inténtelo de nuevo.');
+        console.error('Error creating payment intent:', err);
+      }
+    };
+
+    if (amount > 0) {
+      createPaymentIntent();
+    }
+  }, [amount, API_URL]);
+
+  const cardStyle = {
+    style: {
+      base: {
+        color: '#32325d',
+        fontFamily: 'Arial, sans-serif',
+        fontSmoothing: 'antialiased',
+        fontSize: '16px',
+        '::placeholder': {
+          color: '#aab7c4'
+        }
+      },
+      invalid: {
+        color: '#fa755a',
+        iconColor: '#fa755a'
+      }
+    }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!stripe || !elements) {
-      // Stripe.js aún no ha cargado
+  const handleChange = (event) => {
+    // Escuchar cambios en CardElement
+    setDisabled(event.empty);
+    setError(event.error ? event.error.message : '');
+  };
+
+  const handleSubmit = async (ev) => {
+    ev.preventDefault();
+    setProcessing(true);
+
+    if (!stripe || !elements || !clientSecret) {
+      setProcessing(false);
       return;
     }
-    
-    // Validación del monto
-    if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
-      setError('Por favor, ingrese un monto válido');
-      return;
-    }
-    
-    const amountValue = parseFloat(amount);
-    if (amountValue < 10) {
-      setError('El monto mínimo de recarga es $10.00');
-      return;
-    }
-    
-    setLoading(true);
-    setError(null);
-    
-    try {
-      // Para la demostración, simulamos el proceso de Stripe
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Simulamos un pago exitoso
-      setSuccess(true);
-      
-      // Notificar al componente padre
-      if (onSuccess) {
-        onSuccess(amountValue);
+
+    const payload = await stripe.confirmCardPayment(clientSecret, {
+      payment_method: {
+        card: elements.getElement(CardElement)
       }
+    });
+
+    if (payload.error) {
+      setError(`Error de pago: ${payload.error.message}`);
+      setProcessing(false);
+    } else {
+      setError(null);
+      setProcessing(false);
+      setSucceeded(true);
       
-      // Limpiar el formulario
-      setAmount('');
-      
-      // En un escenario real, realizaríamos estos pasos:
-      // 1. Crear un Payment Intent en el servidor
-      // 2. Usar stripe.confirmCardPayment con el cardElement
-      // 3. Confirmar la recarga en nuestro backend
-      
-    } catch (err) {
-      console.error('Error al procesar el pago:', err);
-      setError(err.message || 'Ha ocurrido un error al procesar el pago');
-    } finally {
-      setLoading(false);
+      // Aquí podríamos actualizar el saldo del usuario o navegar a otra página
+      // después de un pago exitoso
+
+      // Simulando actualización de saldo después del pago exitoso
+      try {
+        const token = localStorage.getItem('token');
+        await axios.post(
+          `${API_URL}/balance/update-after-payment`,
+          { 
+            amount, 
+            paymentId: payload.paymentIntent.id,
+            paymentType: 'stripe'
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            }
+          }
+        );
+      } catch (err) {
+        console.error('Error updating balance after payment:', err);
+      }
     }
   };
 
   return (
-    <div className="stripe-payment-container">
+    <form id="payment-form" onSubmit={handleSubmit}>
+      {/* Cuando el pago es exitoso */}
+      {succeeded ? (
+        <div className="payment-success bg-green-50 text-green-700 p-4 rounded mb-4">
+          <p className="font-medium">¡Pago procesado correctamente!</p>
+          <p>Su saldo ha sido actualizado.</p>
+        </div>
+      ) : (
+        <>
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Detalles de la tarjeta
+            </label>
+            <CardElement 
+              id="card-element" 
+              options={cardStyle} 
+              onChange={handleChange} 
+              className="card-element"
+            />
+          </div>
+
+          <button
+            disabled={processing || disabled || succeeded || !clientSecret}
+            id="submit"
+            className={`w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white ${
+              processing || disabled || !clientSecret
+                ? 'bg-gray-400 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700'
+            } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
+          >
+            <span id="button-text">
+              {processing ? (
+                <div className="spinner" id="spinner"></div>
+              ) : (
+                `Pagar $${amount}`
+              )}
+            </span>
+          </button>
+        </>
+      )}
+
+      {/* Mostrar cualquier error que ocurra al procesar el pago */}
       {error && (
-        <div className="alert alert-danger" role="alert">
+        <div className="card-error text-red-500 mt-2 text-sm" role="alert">
           {error}
         </div>
       )}
-      
-      {success ? (
-        <div className="text-center">
-          <div className="alert alert-success mb-4" role="alert">
-            ¡Pago completado con éxito! Su saldo ha sido actualizado.
-          </div>
-          <button 
-            className="btn btn-outline-primary" 
-            onClick={() => {
-              setSuccess(false);
-              setError(null);
-            }}
-          >
-            Realizar otra recarga
-          </button>
-        </div>
-      ) : (
-        <form onSubmit={handleSubmit}>
-          <div className="form-group mb-3">
-            <label htmlFor="amount">Monto a recargar ($)</label>
-            <input
-              type="number"
-              id="amount"
-              className="form-control"
-              placeholder="100"
-              value={amount}
-              onChange={handleAmountChange}
-              min="10"
-              step="1"
-              required
-              disabled={loading}
-            />
-            <small className="form-text text-muted">Monto mínimo: $10</small>
-          </div>
-          
-          <div className="form-group mb-3">
-            <label>Información de tarjeta</label>
-            <div className="card-element-container p-3 border rounded">
-              {/* Componente CardElement de Stripe */}
-              <CardElement
-                options={{
-                  style: {
-                    base: {
-                      fontSize: '16px',
-                      color: '#424770',
-                      '::placeholder': {
-                        color: '#aab7c4',
-                      },
-                    },
-                    invalid: {
-                      color: '#9e2146',
-                    },
-                  },
-                  hidePostalCode: true
-                }}
-              />
-            </div>
-          </div>
-          
-          <button
-            type="submit"
-            className="btn btn-primary w-100"
-            disabled={!stripe || loading}
-          >
-            {loading ? 'Procesando...' : 'Pagar y Recargar'}
-          </button>
-        </form>
-      )}
+    </form>
+  );
+};
+
+// Promise para cargar Stripe
+const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || 'pk_test_TYooMQauvdEDq54NiTphI7jx');
+
+// Componente principal que envuelve el formulario con el contexto de Stripe
+const StripePayment = ({ amount }) => {
+  return (
+    <div className="stripe-payment-container">
+      <Elements stripe={stripePromise}>
+        <CheckoutForm amount={amount} />
+      </Elements>
     </div>
   );
 };
